@@ -107,6 +107,45 @@ Two hooks in `hooks/` (run by cron/systemd or `--loop`):
 | `muse-room-watch` | Scans the room; new messages from others print `WAKE <ids>` to wake a worker. Costs no tokens when idle. | 5 s |
 | `muse-daemon-watch` | Checks the daemon is still connected to the Relay; if it dropped, runs the recovery procedure (`hooks/recover-daemon.sh`). | 60 s |
 
+### Daemon restart
+
+Run `.venv/bin/python -m tools.muse_client daemon restart --timeout 60`
+to stop, recover a stale session, and start again. It polls real readiness
+(connected and joined), prints one JSON result, and exits 0 on success or
+1 on failure. Healthy sessions are preserved; stale sessions are backed up
+as `session.json.bak-YYYYMMDD-HHMM` (with a suffix on collisions). The last
+room is saved in session state, independent of status-file rewrites.
+Use `daemon status --json` for machine-readable status.
+
+`hooks/recover-daemon.sh` disables both hooks around this command and always
+re-enables them. Login failures retry indefinitely with exponential backoff
+from 1 to 60 seconds. For `APP_OFFLINE`, bring the host Panel back online.
+If the Relay restarted and the room is gone, login succeeds without joining;
+restart reports a readiness timeout until you join a new room.
+
+### Windows service groundwork (manual setup)
+
+Windows uses a named pipe per state directory instead of a Unix socket.
+Install dependencies with `python -m pip install -r requirements.txt`
+(includes pywin32 on Windows), then in an elevated terminal run:
+
+```powershell
+python -m tools.muse_client.winservice install
+python -m tools.muse_client.winservice start
+# Later:
+python -m tools.muse_client.winservice stop
+python -m tools.muse_client.winservice remove
+```
+
+Set **system** environment variables `MUSE_UM_RELAY_URL` and
+`MUSE_UM_STATE_DIR` before starting the service; reboot if needed for the
+Service Control Manager to pick up changes. Use an absolute state directory
+already paired/logged in, accessible to the service account. The Python
+environment and this repo must also be importable by that account. Do not
+run a CLI-spawned daemon and the service against the same state directory.
+This is a service skeleton, not an installer; native Windows pipe/service
+operation still needs a Windows run to verify.
+
 ## Testing
 
 Real end-to-end test (`tests/test_e2e.py`): starts a real Relay + Panel on

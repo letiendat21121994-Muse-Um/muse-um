@@ -4,8 +4,8 @@
 # Cách dùng (một lần kiểm tra; vòng lặp do cron/systemd gọi lại, hoặc --loop):
 #   hooks/muse-daemon-watch.sh [--loop]
 #
-#   - Chạy `daemon status`.
-#   - Nếu KHÔNG thấy `connected: true` -> gọi hooks/recover-daemon.sh
+#   - Chạy `daemon status --json`.
+#   - Nếu chưa kết nối hoặc chưa vào phòng -> gọi hooks/recover-daemon.sh
 #     (quy trình khôi phục, PROTOCOL.md §13 / hướng dẫn gốc mục 10).
 #   - Nếu file hooks.disabled tồn tại (đang khôi phục) -> im lặng, exit 0.
 #
@@ -38,10 +38,10 @@ check_once() {
         return 0
     fi
 
-    STATUS_OUT="$(cd "$REPO_DIR" && "$CLIENT_PY" -m tools.muse_client daemon status 2>&1)"
+    STATUS_OUT="$(cd "$REPO_DIR" && "$CLIENT_PY" -m tools.muse_client daemon status --json 2>&1)"
     STATUS_RC=$?
 
-    if [ $STATUS_RC -eq 0 ] && printf '%s\n' "$STATUS_OUT" | grep -q 'connected: *true'; then
+    if [ $STATUS_RC -eq 0 ] && printf '%s\n' "$STATUS_OUT" | "$CLIENT_PY" -c 'import json, sys; s = json.load(sys.stdin); sys.exit(0 if s.get("connected") and s.get("room_joined") else 1)'; then
         echo "$(date '+%Y-%m-%d %H:%M:%S') daemon-watch: connected: true"
         return 0
     fi

@@ -525,35 +525,48 @@ bước khôi phục **thất bại sau 1 lần thử**.
 Áp dụng khi Relay + Panel đều đang chạy (daemon mất kết nối nhưng máy host
 vẫn bật):
 
-1. **Tắt cả 2 hook** (`touch ~/.cache/muse-um/hooks.disabled`) để tránh
-   xoay credential.
-2. **Dời file session cũ sang file backup:**
-   ```bash
-   mv ~/.cache/muse-um/session.json ~/.cache/muse-um/session.json.bak-YYYYMMDD-HHMM
-   ```
-   (Nếu file `session.json` đã không còn — do hook daemon-watch đã dời
-   trước đó — thì việc `mv` lỗi **không phải là vật cản**, cứ tiếp tục.)
-3. **Stop rồi start daemon trong MỘT shell:**
-   ```bash
-   cd ~/workspace/muse-um && .venv/bin/python -m tools.muse_client daemon stop
-   cd ~/workspace/muse-um && .venv/bin/python -m tools.muse_client daemon start
-   ```
-4. **Chờ ~25–35 giây** (script chờ 30 giây), rồi kiểm tra:
-   ```bash
-   cd ~/workspace/muse-um && .venv/bin/python -m tools.muse_client daemon status
-   ```
-   Cần thấy `connected: true`, `room_joined: true`.
-   (Vì sao phòng vẫn vào lại được dù đã dời `session.json`: daemon nhớ
-   phòng cuối trong `daemon-status.json` và tự join lại khi khởi động.
-   Nếu Relay đã khởi động lại thì phòng cũ không còn, daemon chỉ đăng
-   nhập mà không vào phòng — lúc đó join phòng mới và thông báo lại các
-   việc đang dở.)
-5. **Bật lại cả 2 hook ngay** (xóa file cờ).
-6. **Không cần mã pair** — daemon tự đăng nhập bằng tài khoản đã lưu.
+### `daemon restart`
 
-> ⚠️ Khởi động lại daemon kiểu thường (chỉ stop/start, không dời
-> `session.json`) **KHÔNG sửa được** lỗi session cũ hỏng. Bắt buộc phải dời
-> `session.json` đi trước.
+Chạy lệnh sau để dừng, khôi phục session cũ hỏng và khởi động lại:
+
+```bash
+.venv/bin/python -m tools.muse_client daemon restart --timeout 60
+```
+
+Lệnh kiểm tra kết nối và trạng thái vào phòng qua socket, không chờ mù
+30 giây. Kết quả là một đối tượng JSON; mã thoát 0 khi thành công, 1 khi
+thất bại (kèm lỗi và cờ chưa sẵn sàng). Session khỏe được giữ nguyên;
+session cũ hỏng được sao lưu thành `session.json.bak-YYYYMMDD-HHMM`,
+thêm hậu tố nếu trùng tên. Phòng cuối được lưu ngay trong session nên
+không mất khi file status bị ghi lại. Dùng `daemon status --json` để đọc
+trạng thái bằng chương trình.
+
+Script `hooks/recover-daemon.sh` tắt cả 2 hook trước lệnh này và luôn bật
+lại sau đó, kể cả khi thất bại. Không cần mã pair. Nếu Relay khởi động lại
+làm mất phòng, daemon vẫn đăng nhập nhưng không vào phòng; hãy join phòng
+mới (restart sẽ báo timeout nếu chưa vào phòng).
+
+### Dịch vụ Windows (thiết lập thủ công)
+
+Trên Windows, daemon dùng named pipe riêng cho từng thư mục state.
+Cài `python -m pip install -r requirements.txt` (có pywin32 trên Windows),
+rồi chạy trong terminal có quyền quản trị:
+
+```powershell
+python -m tools.muse_client.winservice install
+python -m tools.muse_client.winservice start
+# Khi cần dừng hoặc gỡ:
+python -m tools.muse_client.winservice stop
+python -m tools.muse_client.winservice remove
+```
+
+Đặt biến môi trường **hệ thống** `MUSE_UM_RELAY_URL` và `MUSE_UM_STATE_DIR`
+trước khi chạy dịch vụ; có thể cần khởi động lại máy để Service Control
+Manager nhận biến mới. Dùng đường dẫn state tuyệt đối đã pair/login và
+cấp quyền đọc/ghi cho tài khoản chạy dịch vụ. Tài khoản đó cũng cần truy
+cập được môi trường Python và import repo này. Không chạy daemon bằng CLI
+cùng lúc với dịch vụ trên cùng thư mục state. Đây mới là khung dịch vụ,
+chưa có bộ cài; named pipe và dịch vụ vẫn cần kiểm chứng trực tiếp trên Windows.
 
 ### 10.3. Khi nào quy trình trên KHÔNG đủ
 
@@ -561,9 +574,8 @@ vẫn bật):
   online` (hoặc login lỗi transport "Could not reach the Relay"), nghĩa là
   **Panel trên máy host đang offline** (máy host tắt, hoặc Panel chưa mở).
   Lúc này daemon có thử lại cũng không được — **phải mở lại Panel trên máy
-  host trước**, rồi mới restart daemon để nó thử đăng nhập lại (daemon chỉ
-  thử đăng nhập lúc khởi động; bộ giám sát đăng nhập có thể tự dừng sau vài
-  lần thử thất bại).
+  host trước**. Daemon tự thử đăng nhập lại vô hạn, chờ tăng dần từ 1 đến
+  tối đa 60 giây giữa các lần thử; dừng daemon sẽ ngắt thời gian chờ ngay.
 - **Không xin mã pair vội.** Khi Relay thông trở lại, cứ để đăng nhập bằng
   tài khoản đã lưu thử lại trước. Chỉ xin mã pair khi đăng nhập bằng tài
   khoản đã lưu thất bại VÀ host trực tiếp chỉ định.

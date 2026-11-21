@@ -23,7 +23,7 @@ from .client import (
     RelayError,
     require_relay_url,
 )
-from .daemon import daemon_call, daemon_start, daemon_status, daemon_stop, run_daemon
+from .daemon import daemon_call, daemon_restart, daemon_start, daemon_status, daemon_stop, run_daemon
 from .state import (
     get_state_dir,
     load_root_id,
@@ -213,6 +213,10 @@ def cmd_daemon(args: argparse.Namespace) -> int:
             return 2
         run_daemon(relay_url, state_dir)
         return 0
+    if args.action == "restart":
+        result = daemon_restart(state_dir, timeout=args.timeout)
+        print(json.dumps(result))
+        return 0 if result["ok"] else 1
     if args.action == "start":
         try:
             result = daemon_start(state_dir)
@@ -233,6 +237,9 @@ def cmd_daemon(args: argparse.Namespace) -> int:
         return 0
     if args.action == "status":
         status = daemon_status(state_dir)
+        if args.json:
+            print(json.dumps(status))
+            return 0
         print(f"daemon: {status.get('daemon')}")
         print(f"connected: {str(status.get('connected', False)).lower()}")
         print(f"room_joined: {str(status.get('room_joined', False)).lower()}")
@@ -412,11 +419,13 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_login.set_defaults(func=cmd_login)
 
-    p_daemon = sub.add_parser("daemon", help="daemon start|stop|status")
+    p_daemon = sub.add_parser("daemon", help="daemon start|stop|restart|status")
     p_daemon.add_argument(
-        "action", choices=["start", "stop", "status", "_run"],
+        "action", choices=["start", "stop", "restart", "status", "_run"],
         help="daemon action (_run is internal)",
     )
+    p_daemon.add_argument("--timeout", type=float, default=60.0)
+    p_daemon.add_argument("--json", action="store_true")
     p_daemon.set_defaults(func=cmd_daemon)
 
     p_room = sub.add_parser("room", help="room post|reply|list|create|join|invite")

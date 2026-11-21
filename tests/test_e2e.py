@@ -34,7 +34,13 @@ What it does (see PROTOCOL.md for the contract each step checks):
      the saved token).
  10. Chunked upload of a ~600 KB file + SHA-256 verification on read-back
      (read_file encoding="base64" -> result["content"]).
- 11. GET /health -> 200 (re-checked at the end).
+ 11. Healthy/stale/invalid-session restart, backup collisions, durable rejoin
+     after a status rewrite, and recover-daemon.sh hook re-enabling.
+ 12. Unreachable Relay: login retries keep the daemon alive, status exposes
+     errors/attempts, restart timeout is JSON, and stop interrupts backoff.
+ 13. Unix IPC endpoint/framing, deterministic Windows pipe names, and
+     Windows service module import without pywin32 on Linux.
+ 14. GET /health -> 200 (re-checked at the end).
 
 Every step prints [PASS]/[FAIL]; the exit code is non-zero if any step
 fails. All child processes are terminated and temp dirs removed on exit.
@@ -839,16 +845,106 @@ def main() -> int:
             step("chunked read-back SHA-256 matches upload", False, str(e))
 
         # --- 11. recovery (PROTOCOL.md §13) --------------------------------
-        # hooks/recover-daemon.sh for client B: moves session.json aside,
-        # stop/start in one shell, waits ~30 s, expects connected:true
-        # AND room_joined:true (the daemon re-joins its last room from
-        # daemon-status.json). No pair code needed.
+        session_path = state_b / "session.json"
+        old_pid = (state_b / "daemon.pid").read_text()
+        for invalid_timeout in ("0", "-1"):
+            r = run_client(state_b, "daemon", "restart", "--timeout", invalid_timeout)
+            failure = json.loads(r.stdout)
+            status = json.loads(run_client(state_b, "daemon", "status", "--json").stdout)
+            step(f"restart timeout {invalid_timeout} rejected without stopping healthy daemon",
+                 r.returncode == 1 and not failure.get("ok") and bool(failure.get("error"))
+                 and (state_b / "daemon.pid").read_text() == old_pid
+                 and status.get("connected") and status.get("room_joined"), tail(r.stdout))
+        no_relay_env = client_env(state_b)
+        no_relay_env.pop("MUSE_UM_RELAY_URL", None)
+        r = subprocess.run(
+            [PY, "-m", "tools.muse_client", "daemon", "restart"],
+            cwd=str(REPO_ROOT), env=no_relay_env,
+            capture_output=True, text=True, timeout=15)
+        failure = json.loads(r.stdout)
+        status = json.loads(run_client(state_b, "daemon", "status", "--json").stdout)
+        step("restart without relay URL returns error and leaves running daemon connected",
+             r.returncode == 1 and not failure.get("ok") and bool(failure.get("error"))
+             and (state_b / "daemon.pid").read_text() == old_pid
+             and status.get("connected") and status.get("room_joined"), tail(r.stdout))
+        before = session_path.read_bytes()
+        previous_session = json.loads(before)
+        previous_backups = set(state_b.glob("session.json.bak-*"))
+        old_pid = (state_b / "daemon.pid").read_text()
+        r = run_client(state_b, "daemon", "restart", "--timeout", "25")
+        restart = json.loads(r.stdout)
+        current_session = json.loads(session_path.read_bytes())
+        step("healthy restart preserves room state without backup and returns ok JSON",
+             r.returncode == 0 and restart.get("ok")
+             and restart.get("session_backup") is None
+             and set(state_b.glob("session.json.bak-*")) == previous_backups
+             and all(current_session.get(key) == previous_session.get(key)
+                     for key in ("room_id", "last_room_id")), tail(r.stdout + r.stderr))
+        before = session_path.read_bytes()
+        status = json.loads(run_client(state_b, "daemon", "status", "--json").stdout)
+        step("restart replaces old pid and leaves daemon running",
+             (state_b / "daemon.pid").read_text() != old_pid
+             and status.get("daemon") == "running" and status.get("connected")
+             and status.get("room_joined"))
+
+        run_client(state_b, "daemon", "stop")
+        (state_b / "daemon-status.json").write_text('{"room_id": null}')
+        r = run_client(state_b, "daemon", "restart", "--timeout", "25")
+        restart = json.loads(r.stdout)
+        status = json.loads(run_client(state_b, "daemon", "status", "--json").stdout)
+        backup = state_b / (restart.get("session_backup") or "missing-backup")
+        step("stale restart backs up session, rejoins same room in <30s despite status rewrite",
+             r.returncode == 0 and restart.get("ok") and restart.get("connected")
+             and restart.get("room_joined") and restart.get("elapsed_s", 99) < 30
+             and backup.is_file() and backup.read_bytes() == before
+             and status.get("room_id") == room_id, tail(r.stdout + r.stderr))
+
+        for invalid in ('not JSON', '[]'):
+            run_client(state_b, "daemon", "stop")
+            session_path.write_text(invalid)
+            r = run_client(state_b, "daemon", "restart", "--timeout", "25")
+            restart = json.loads(r.stdout)
+            new_backup = state_b / (restart.get("session_backup") or "missing-backup")
+            status = json.loads(run_client(state_b, "daemon", "status", "--json").stdout)
+            step(f"invalid session {invalid!r}: backup preserved and same room recovered",
+                 r.returncode == 0 and restart.get("ok") and new_backup != backup
+                 and new_backup.read_text() == invalid and backup.read_bytes() == before
+                 and status.get("room_id") == room_id, tail(r.stdout + r.stderr))
+
+        r = run_client(state_b, "room", "create", "--name", "older-backup-room")
+        match = ROOM_RE.search(r.stdout)
+        older_room = match.group(0) if match else None
+        run_client(state_b, "room", "join", room_id)
+        for newest in ("status", "backup"):
+            run_client(state_b, "daemon", "stop")
+            backup_room_path = state_b / "session.json.bak-other-room"
+            status_path = state_b / "daemon-status.json"
+            backup_room_path.write_text(json.dumps({"room_id": older_room}))
+            status_path.write_text(json.dumps({"room_id": room_id}))
+            for old_backup in state_b.glob("session.json.bak-*"):
+                os.utime(old_backup, ns=(1_000_000_000, 1_000_000_000))
+            status_stamp = 3_000_000_000 if newest == "status" else 2_000_000_000
+            backup_stamp = 3_000_000_000 if newest == "backup" else 2_000_000_000
+            os.utime(status_path, ns=(status_stamp, status_stamp))
+            os.utime(backup_room_path, ns=(backup_stamp, backup_stamp))
+            session_path.write_text("not JSON")
+            r = run_client(state_b, "daemon", "restart", "--timeout", "25")
+            restart = json.loads(r.stdout)
+            status = json.loads(run_client(state_b, "daemon", "status", "--json").stdout)
+            expected_room = room_id if newest == "status" else older_room
+            step(f"corrupt session restart chooses {newest} room when its mtime is newer",
+                 bool(older_room) and older_room != room_id and r.returncode == 0
+                 and restart.get("ok") and status.get("room_id") == expected_room
+                 and status.get("room_joined"), tail(r.stdout))
+        run_client(state_b, "room", "join", room_id)
+
+        # Không cần pair; hook luôn được bật lại sau khôi phục.
         rec = subprocess.run(
             ["bash", str(REPO_ROOT / "hooks" / "recover-daemon.sh")],
             cwd=str(REPO_ROOT), env=client_env(state_b),
             capture_output=True, text=True, timeout=120.0)
         step("recover-daemon.sh for client B exits 0",
-             rec.returncode == 0,
+             rec.returncode == 0 and not (state_b / "hooks.disabled").exists(),
              tail(rec.stdout + rec.stderr) if rec.returncode != 0 else "")
         ok = wait_daemon_connected(state_b, timeout=30)
         joined = False
@@ -861,7 +957,142 @@ def main() -> int:
         step("after recovery: client B connected:true + room_joined:true",
              ok and joined, "connected=%s joined=%s" % (ok, joined))
 
-        # --- 12. /health again at the end -----------------------------------
+        # --- 12. Failed login remains supervised until explicitly stopped --
+        scratch = tmp / "state-retry"
+        scratch.mkdir()
+        unreachable = {"MUSE_UM_RELAY_URL": "http://127.0.0.1:1"}
+        try:
+            r = run_client(scratch, "daemon", "start", extra_env=unreachable)
+            log_path = scratch / "daemon.log"
+            retried = wait_for(lambda: log_path.exists() and
+                               log_path.read_text().count("retrying in") >= 2, 15)
+            status = json.loads(run_client(scratch, "daemon", "status", "--json").stdout)
+            step("login retry: unreachable relay stays alive with at least two retrying in lines",
+                 r.returncode == 0 and bool(retried) and status.get("daemon") == "running"
+                 and status.get("login_attempts", 0) >= 2 and bool(status.get("last_error")))
+            r = run_client(scratch, "daemon", "restart", "--timeout", "8", extra_env=unreachable)
+            failure = json.loads(r.stdout)
+            step("restart timeout returns one error JSON with missing flags and last login error",
+                 r.returncode == 1 and not failure.get("ok")
+                 and not failure.get("connected") and not failure.get("room_joined")
+                 and failure.get("session_backup") is None
+                 and all(s in failure.get("error", "") for s in
+                         ("connected", "room_joined", "last login error")), tail(r.stdout))
+            started_stop = time.monotonic()
+            r = run_client(scratch, "daemon", "stop")
+            status = json.loads(run_client(scratch, "daemon", "status", "--json").stdout)
+            step("login retry: stop interrupts backoff cleanly",
+                 r.returncode == 0 and time.monotonic() - started_stop < 3
+                 and status.get("daemon") == "stopped")
+        finally:
+            run_client(scratch, "daemon", "stop")
+
+        # --- 13. IPC and Windows service groundwork ------------------------
+        ipc_state = tmp / "state-ipc"
+        ipc_state.mkdir()
+        check = subprocess.run(
+            [PY, "-c", '''
+import asyncio
+import json
+import os
+import sys
+from pathlib import Path
+from tools.muse_client import ipc, winservice
+from tools.muse_client.daemon import Daemon, _last_room
+
+state = Path(sys.argv[1])
+other = state.parent / "other-state-ipc"
+(state / "session.json.bak-test").write_text('{"room_id": "backup-room"}')
+(state / "daemon-status.json").write_text('{"room_id": "legacy-room"}')
+os.utime(state / "session.json.bak-test", ns=(1_000_000_000, 1_000_000_000))
+os.utime(state / "daemon-status.json", ns=(2_000_000_000, 2_000_000_000))
+(state / "session.json").write_text('{"room_id": null}')
+existing_room = _last_room(state, {"room_id": None})
+session_room = _last_room(state, {"room_id": "session-room"})
+status_rooms = []
+for invalid in ("not JSON", "[]"):
+    (state / "session.json").write_text(invalid)
+    status_rooms.append(_last_room(state, {}))
+(state / "daemon-status.json").write_text('{"room_id": null}')
+(state / "session.json").write_text('{"room_id": null}')
+valid_empty_room = _last_room(state, {"room_id": None})
+invalid_rooms = []
+for invalid in ("not JSON", "[]"):
+    (state / "session.json").write_text(invalid)
+    invalid_rooms.append(_last_room(state, {}))
+(state / "session.json").unlink()
+absent_room = _last_room(state, {})
+(state / "session.json.bak-invalid").write_text('not JSON')
+(state / "session.json.bak-empty").write_text('{"room_id": null}')
+os.utime(state / "session.json.bak-test", ns=(3_000_000_000, 3_000_000_000))
+backup_room = _last_room(state, {})
+checks = {
+    "room_backup_scope": (existing_room == "legacy-room" and absent_room == "backup-room"
+                          and invalid_rooms == ["backup-room", "backup-room"]
+                          and session_room == "session-room" and valid_empty_room is None
+                          and status_rooms == ["legacy-room", "legacy-room"]
+                          and backup_room == "backup-room"),
+    "unix_endpoint": ipc.endpoint(state) == str(state / "daemon.sock"),
+    "pipe_names": (ipc.pipe_name(state).startswith("\\\\\\\\.\\\\pipe\\\\muse-um-")
+                   and ipc.pipe_name(state) == ipc.pipe_name(state / ".")
+                   and ipc.pipe_name(state) != ipc.pipe_name(other)
+                   and len(ipc.pipe_name(state).rsplit("-", 1)[1]) == 16),
+    "service_import": callable(winservice.main) and "win32serviceutil" not in sys.modules,
+}
+
+async def framing():
+    (state / "daemon.sock").touch()
+    daemon = Daemon("http://127.0.0.1:1", state)
+    server = await ipc.start_server(daemon._handle_socket, state)
+    replies = []
+    try:
+        for request in (json.dumps({"command": "ping", "padding": "x" * 80000}), "{bad", ""):
+            reader, writer = await ipc.open_connection(state, 2)
+            try:
+                writer.write((request + "\\n").encode())
+                await writer.drain()
+                replies.append(json.loads(await asyncio.wait_for(reader.readline(), 2)))
+            finally:
+                writer.close()
+                await writer.wait_closed()
+    finally:
+        await ipc.close_server(server, state)
+    return (replies[0].get("pong") and not replies[1].get("ok")
+            and not replies[2].get("ok") and not (state / "daemon.sock").exists())
+
+async def startup_status():
+    legacy_state = state / "legacy"
+    legacy_state.mkdir()
+    (legacy_state / "daemon-status.json").write_text('{"room_id": "legacy-room"}')
+    daemon = Daemon("http://127.0.0.1:1", legacy_state)
+    observed = {}
+
+    async def capture_startup():
+        observed.update(json.loads((legacy_state / "daemon-status.json").read_text()))
+
+    daemon._serve_forever = capture_startup
+    await daemon.run()
+    return observed.get("room_id") == "legacy-room" and not observed.get("room_joined")
+
+checks["legacy_status"] = asyncio.run(startup_status())
+checks["framing"] = asyncio.run(framing())
+print(json.dumps(checks))
+''', str(ipc_state)],
+            cwd=str(REPO_ROOT), capture_output=True, text=True, timeout=15)
+        checks = json.loads(check.stdout) if check.returncode == 0 else {}
+        detail = tail(check.stdout + check.stderr)
+        step("room backups used for absent/invalid sessions, not valid empty room state",
+             checks.get("room_backup_scope", False), detail)
+        step("initial status write preserves legacy room without claiming joined",
+             checks.get("legacy_status", False), detail)
+        step("IPC endpoint: Unix daemon.sock path", checks.get("unix_endpoint", False), detail)
+        step("Windows pipe names: deterministic, prefixed, unique per state dir",
+             checks.get("pipe_names", False), detail)
+        step("winservice imports on Linux without pywin32", checks.get("service_import", False), detail)
+        step("IPC newline framing: no half-close, large request, invalid/empty JSON, cleanup",
+             checks.get("framing", False), detail)
+
+        # --- 14. /health again at the end -----------------------------------
         code_http, health = http_json("GET", "/health")
         step("GET /health -> 200 at end",
              code_http == 200 and health.get("status") == "ok",
