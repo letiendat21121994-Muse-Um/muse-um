@@ -56,9 +56,8 @@
         body.innerHTML = "<tr><td colspan='2'>Chưa có tài khoản nào.</td></tr>";
       } else {
         body.innerHTML = accountsCache.map(function (a) {
-          return "<tr><td></td><td><code></code></td></tr>"
-            .replace("<td></td>", "<td>" + escapeHtml(a.name) + "</td>")
-            .replace("<code></code>", "<code>" + escapeHtml(a.account_id) + "</code>");
+          return "<tr><td>" + escapeHtml(a.name) + "</td><td><code>" +
+            escapeHtml(a.account_id) + "</code></td></tr>";
         }).join("");
       }
       fillSelect($("pair-account"), accountsCache);
