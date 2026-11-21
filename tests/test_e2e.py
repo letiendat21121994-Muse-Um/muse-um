@@ -34,7 +34,11 @@ What it does (see PROTOCOL.md for the contract each step checks):
      the saved token).
  10. Chunked upload of a ~600 KB file + SHA-256 verification on read-back
      (read_file encoding="base64" -> result["content"]).
- 11. GET /health -> 200 (re-checked at the end).
+ 11. Healthy/stale/invalid-session restart, backup collisions, durable rejoin
+     after a status rewrite, and recover-daemon.sh hook re-enabling.
+ 12. Unreachable Relay: login retries keep the daemon alive, status exposes
+     errors/attempts, restart timeout is JSON, and stop interrupts backoff.
+ 13. GET /health -> 200 (re-checked at the end).
 
 Every step prints [PASS]/[FAIL]; the exit code is non-zero if any step
 fails. All child processes are terminated and temp dirs removed on exit.
@@ -839,16 +843,52 @@ def main() -> int:
             step("chunked read-back SHA-256 matches upload", False, str(e))
 
         # --- 11. recovery (PROTOCOL.md §13) --------------------------------
-        # hooks/recover-daemon.sh for client B: moves session.json aside,
-        # stop/start in one shell, waits ~30 s, expects connected:true
-        # AND room_joined:true (the daemon re-joins its last room from
-        # daemon-status.json). No pair code needed.
+        session_path = state_b / "session.json"
+        before = session_path.read_bytes()
+        previous_session = json.loads(before)
+        previous_backups = set(state_b.glob("session.json.bak-*"))
+        r = run_client(state_b, "daemon", "restart", "--timeout", "25")
+        restart = json.loads(r.stdout)
+        current_session = json.loads(session_path.read_bytes())
+        step("healthy restart preserves room state without backup and returns ok JSON",
+             r.returncode == 0 and restart.get("ok")
+             and restart.get("session_backup") is None
+             and set(state_b.glob("session.json.bak-*")) == previous_backups
+             and all(current_session.get(key) == previous_session.get(key)
+                     for key in ("room_id", "last_room_id")), tail(r.stdout + r.stderr))
+        before = session_path.read_bytes()
+
+        run_client(state_b, "daemon", "stop")
+        (state_b / "daemon-status.json").write_text('{"room_id": null}')
+        r = run_client(state_b, "daemon", "restart", "--timeout", "25")
+        restart = json.loads(r.stdout)
+        status = json.loads(run_client(state_b, "daemon", "status", "--json").stdout)
+        backup = state_b / (restart.get("session_backup") or "missing-backup")
+        step("stale restart backs up session, rejoins same room in <30s despite status rewrite",
+             r.returncode == 0 and restart.get("ok") and restart.get("connected")
+             and restart.get("room_joined") and restart.get("elapsed_s", 99) < 30
+             and backup.is_file() and backup.read_bytes() == before
+             and status.get("room_id") == room_id, tail(r.stdout + r.stderr))
+
+        for invalid in ('not JSON', '[]'):
+            run_client(state_b, "daemon", "stop")
+            session_path.write_text(invalid)
+            r = run_client(state_b, "daemon", "restart", "--timeout", "25")
+            restart = json.loads(r.stdout)
+            new_backup = state_b / (restart.get("session_backup") or "missing-backup")
+            status = json.loads(run_client(state_b, "daemon", "status", "--json").stdout)
+            step(f"invalid session {invalid!r}: backup preserved and same room recovered",
+                 r.returncode == 0 and restart.get("ok") and new_backup != backup
+                 and new_backup.read_text() == invalid and backup.read_bytes() == before
+                 and status.get("room_id") == room_id, tail(r.stdout + r.stderr))
+
+        # Không cần pair; hook luôn được bật lại sau khôi phục.
         rec = subprocess.run(
             ["bash", str(REPO_ROOT / "hooks" / "recover-daemon.sh")],
             cwd=str(REPO_ROOT), env=client_env(state_b),
             capture_output=True, text=True, timeout=120.0)
         step("recover-daemon.sh for client B exits 0",
-             rec.returncode == 0,
+             rec.returncode == 0 and not (state_b / "hooks.disabled").exists(),
              tail(rec.stdout + rec.stderr) if rec.returncode != 0 else "")
         ok = wait_daemon_connected(state_b, timeout=30)
         joined = False
@@ -861,7 +901,37 @@ def main() -> int:
         step("after recovery: client B connected:true + room_joined:true",
              ok and joined, "connected=%s joined=%s" % (ok, joined))
 
-        # --- 12. /health again at the end -----------------------------------
+        # --- 12. Failed login remains supervised until explicitly stopped --
+        scratch = tmp / "state-retry"
+        scratch.mkdir()
+        unreachable = {"MUSE_UM_RELAY_URL": "http://127.0.0.1:1"}
+        try:
+            r = run_client(scratch, "daemon", "start", extra_env=unreachable)
+            log_path = scratch / "daemon.log"
+            retried = wait_for(lambda: log_path.exists() and
+                               log_path.read_text().count("retrying in") >= 2, 15)
+            status = json.loads(run_client(scratch, "daemon", "status", "--json").stdout)
+            step("login retry: unreachable relay stays alive with at least two retrying in lines",
+                 r.returncode == 0 and bool(retried) and status.get("daemon") == "running"
+                 and status.get("login_attempts", 0) >= 2 and bool(status.get("last_error")))
+            r = run_client(scratch, "daemon", "restart", "--timeout", "8", extra_env=unreachable)
+            failure = json.loads(r.stdout)
+            step("restart timeout returns one error JSON with missing flags and last login error",
+                 r.returncode == 1 and not failure.get("ok")
+                 and not failure.get("connected") and not failure.get("room_joined")
+                 and failure.get("session_backup") is None
+                 and all(s in failure.get("error", "") for s in
+                         ("connected", "room_joined", "last login error")), tail(r.stdout))
+            started_stop = time.monotonic()
+            r = run_client(scratch, "daemon", "stop")
+            status = json.loads(run_client(scratch, "daemon", "status", "--json").stdout)
+            step("login retry: stop interrupts backoff cleanly",
+                 r.returncode == 0 and time.monotonic() - started_stop < 3
+                 and status.get("daemon") == "stopped")
+        finally:
+            run_client(scratch, "daemon", "stop")
+
+        # --- 13. /health again at the end -----------------------------------
         code_http, health = http_json("GET", "/health")
         step("GET /health -> 200 at end",
              code_http == 200 and health.get("status") == "ok",

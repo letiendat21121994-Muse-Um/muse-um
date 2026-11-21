@@ -40,8 +40,27 @@ from .state import (
 )
 from .token_crypto import load_token
 
-RECONNECT_DELAY_S = 5.0
 STATUS_WRITE_INTERVAL_S = 10.0
+
+
+def _read_dict(path: Path) -> dict:
+    try:
+        value = json.loads(path.read_text(encoding="utf-8"))
+        return value if isinstance(value, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def _last_room(state_dir: Path, saved: dict) -> str | None:
+    room = saved.get("room_id") or saved.get("last_room_id")
+    if room:
+        return room
+    backups = sorted(state_dir.glob("session.json.bak-*"),
+                     key=lambda p: p.stat().st_mtime_ns, reverse=True)
+    if backups:
+        backup = _read_dict(backups[0])
+        room = backup.get("room_id") or backup.get("last_room_id")
+    return room or _read_dict(state_dir / DAEMON_STATUS_FILE).get("room_id")
 
 
 def _repo_root() -> Path:
@@ -65,6 +84,9 @@ class Daemon:
         self.members: list[dict] = []
         self.connected = False
         self.room_joined = False
+        self.last_error: str | None = None
+        self.login_attempts = 0
+        self._saved_room = _last_room(self.state_dir, _read_dict(self.state_dir / "session.json"))
         self._stop = asyncio.Event()
         self._sock_server: asyncio.AbstractServer | None = None
         self._status_task: asyncio.Task | None = None
@@ -75,6 +97,8 @@ class Daemon:
             "daemon": "running",
             "connected": self.connected,
             "room_joined": self.room_joined,
+            "last_error": self.last_error,
+            "login_attempts": self.login_attempts,
             "session": self.session_id is not None,
             "account_id_present": self.account_id is not None,
             "room_id": self.room_id,
@@ -117,23 +141,10 @@ class Daemon:
         self.session_id = result.get("session_id")
         self.account_id = result.get("account_id")
         self.account_name = result.get("account_name")
-        saved = load_session(self.state_dir) or {}
-        self.room_id = saved.get("room_id")
-        if not self.room_id:
-            # Recovery (PROTOCOL.md §13) moves session.json aside, so
-            # the room is no longer there. The last known room is kept
-            # in daemon-status.json (rewritten on every join/message)
-            # — rejoin it if it still exists on the Relay. A room that
-            # died with a Relay restart fails the join and the daemon
-            # simply stays logged in without a room.
-            try:
-                last = json.loads(
-                    state_path(DAEMON_STATUS_FILE, self.state_dir)
-                    .read_text(encoding="utf-8")
-                )
-                self.room_id = last.get("room_id") or None
-            except (OSError, ValueError):
-                self.room_id = None
+        saved = _read_dict(self.state_dir / "session.json")
+        previous = dict(saved)
+        self.room_id = saved.get("room_id") or saved.get("last_room_id") or self._saved_room
+        last_room = self.room_id
         if self.room_id:
             try:
                 joined = await self.client.room_join(self.room_id)
@@ -145,46 +156,69 @@ class Daemon:
                 self.room_id = None
                 self.room_joined = False
                 self.members = []
-        save_session(
+        saved.update(
             {
                 "session_id": self.session_id,
                 "account_id": self.account_id,
                 "room_id": self.room_id,
+                "last_room_id": self.room_id or last_room,
                 "relay_url": self.relay_url,
-            },
-            self.state_dir,
+            }
         )
+        if saved != previous:
+            save_session(saved, self.state_dir)
         self.connected = True
         self.write_status()
 
     async def _serve_forever(self) -> None:
+        delay = 1.0
         while not self._stop.is_set():
+            self.login_attempts += 1
+            retry_delay = delay
             try:
                 self.client = RelayClient(self.relay_url, self.state_dir)
                 self.client.on_room_message = self._on_room_message
                 await self.client.connect()
                 await self._login_and_join()
+                print(f"[daemon] login ok after {self.login_attempts} attempt(s)", flush=True)
+                self.last_error = None
+                delay = 1.0
+                retry_delay = delay
+                self.write_status()
                 # Block until the connection drops or we are stopping.
                 while not self._stop.is_set():
                     await asyncio.sleep(1)
                     if self.client.ws is None or self.client.ws.close_code is not None:
                         break
-            except (RelayError, OSError, asyncio.CancelledError) as exc:
-                if isinstance(exc, asyncio.CancelledError):
-                    raise
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
                 self.connected = False
                 self.room_joined = False
-                self.write_status()
-                print(f"[daemon] connection failed: {exc}", flush=True)
+                self.last_error = (f"{exc.code}: {exc.message}" if isinstance(exc, RelayError)
+                                   else f"{type(exc).__name__}: connection/login failed")
+                token = load_token(self.state_dir)
+                if token:
+                    self.last_error = self.last_error.replace(token, "[redacted]")
+                self.last_error = self.last_error.replace(self.relay_url, "[relay]")
+                if self.client is not None:
+                    self.last_error = self.last_error.replace(self.client.ws_url, "[relay]")
+                print(f"[daemon] login attempt {self.login_attempts} failed: "
+                      f"{self.last_error}; retrying in {delay:g}s", flush=True)
+                delay = min(delay * 2, 60.0)
             finally:
                 if self.client is not None:
                     await self.client.close()
                     self.client = None
                 self.connected = False
+                self.room_joined = False
                 self.write_status()
             if self._stop.is_set():
                 break
-            await asyncio.wait_for(self._stop.wait(), timeout=RECONNECT_DELAY_S)
+            try:
+                await asyncio.wait_for(self._stop.wait(), timeout=retry_delay)
+            except asyncio.TimeoutError:
+                pass
 
     # -- Unix socket API ---------------------------------------------------
     async def _handle_socket(self, reader, writer) -> None:
@@ -254,6 +288,7 @@ class Daemon:
                                 "session_id": self.session_id,
                                 "account_id": self.account_id,
                                 "room_id": self.room_id,
+                                "last_room_id": self.room_id,
                                 "relay_url": self.relay_url,
                             }
                         )
@@ -273,6 +308,7 @@ class Daemon:
                         "session_id": self.session_id,
                         "account_id": self.account_id,
                         "room_id": self.room_id,
+                        "last_room_id": self.room_id,
                         "relay_url": self.relay_url,
                     }
                 )
@@ -312,19 +348,6 @@ class Daemon:
         self._sock_server = await asyncio.start_unix_server(
             self._handle_socket, path=str(sock_path)
         )
-        # Seed the last known room BEFORE the first status write: the
-        # write below would otherwise clobber daemon-status.json with
-        # room_id=None and destroy the memory _login_and_join falls
-        # back to after a recovery moved session.json aside (§13).
-        try:
-            _last = json.loads(
-                state_path(DAEMON_STATUS_FILE, self.state_dir)
-                .read_text(encoding="utf-8")
-            )
-            if _last.get("room_id"):
-                self.room_id = _last["room_id"]
-        except (OSError, ValueError):
-            pass
         self.write_status()
         self._status_task = asyncio.create_task(self._status_writer())
         loop = asyncio.get_running_loop()
@@ -463,7 +486,8 @@ def daemon_start(state_dir: Path | None = None) -> dict:
         proc = subprocess.Popen(
             [sys.executable, "-m", "tools.muse_client", "daemon", "_run"],
             cwd=str(_repo_root()),
-            env={**os.environ, "MUSE_UM_RELAY_URL": relay_url},
+            env={**os.environ, "MUSE_UM_RELAY_URL": relay_url,
+                 "MUSE_UM_STATE_DIR": str(state_dir)},
             stdin=subprocess.DEVNULL,
             stdout=log_fh,
             stderr=log_fh,
@@ -480,6 +504,64 @@ def daemon_start(state_dir: Path | None = None) -> dict:
     if proc.poll() is not None:
         return {"ok": False, "error": f"daemon exited immediately (see {log_path})"}
     return {"ok": True, "pid": proc.pid, "already_running": False}
+
+
+def daemon_restart(state_dir: Path | None = None, timeout: float = 60.0) -> dict:
+    state_dir = state_dir or get_state_dir()
+    started = time.monotonic()
+    deadline = started + max(0.0, timeout)
+    status = {}
+    backup = None
+
+    def result(error: str | None = None) -> dict:
+        value = {"ok": error is None, "connected": bool(status.get("connected")),
+                 "room_joined": bool(status.get("room_joined")),
+                 "session_backup": backup,
+                 "elapsed_s": round(time.monotonic() - started, 3)}
+        if error:
+            value["error"] = error
+        return value
+
+    try:
+        live = daemon_call({"command": "status"}, state_dir, timeout=1.0)
+        path = state_dir / "session.json"
+        saved = load_session(state_dir)
+        healthy = (live and live.get("ok") and live.get("connected")
+                   and live.get("room_joined") and isinstance(saved, dict))
+        saved = saved if isinstance(saved, dict) else {}
+        room = _last_room(state_dir, saved)
+        stopped = daemon_stop(state_dir)
+        if not stopped.get("ok") and stopped.get("error") != "daemon is not running":
+            return result(stopped.get("error", "daemon stop failed"))
+        if not healthy and path.exists():
+            name = "session.json.bak-" + time.strftime("%Y%m%d-%H%M")
+            target = state_dir / name
+            suffix = 2
+            while target.exists():
+                target = state_dir / f"{name}-{suffix}"
+                suffix += 1
+            path.rename(target)
+            backup = target.name
+            save_session({"room_id": room, "last_room_id": room,
+                          "relay_url": saved.get("relay_url") or require_relay_url()}, state_dir)
+        launched = daemon_start(state_dir)
+        if not launched.get("ok"):
+            return result(launched.get("error", "daemon start failed"))
+        while time.monotonic() < deadline:
+            status = daemon_call({"command": "status"}, state_dir,
+                                 timeout=min(1.0, deadline - time.monotonic())) or {}
+            if status.get("connected") and status.get("room_joined"):
+                return result()
+            remaining = deadline - time.monotonic()
+            if remaining > 0:
+                time.sleep(min(0.5, remaining))
+        missing = [flag for flag in ("connected", "room_joined") if not status.get(flag)]
+        error = "Timed out waiting for " + ", ".join(missing) + " to become true"
+        if status.get("last_error"):
+            error += "; last login error: " + status["last_error"]
+        return result(error)
+    except (OSError, ValueError, MissingRelayUrlError) as exc:
+        return result(str(exc))
 
 
 def daemon_stop(state_dir: Path | None = None) -> dict:
