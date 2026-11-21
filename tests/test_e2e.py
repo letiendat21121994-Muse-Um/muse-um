@@ -847,6 +847,14 @@ def main() -> int:
         # --- 11. recovery (PROTOCOL.md §13) --------------------------------
         session_path = state_b / "session.json"
         old_pid = (state_b / "daemon.pid").read_text()
+        for invalid_timeout in ("0", "-1"):
+            r = run_client(state_b, "daemon", "restart", "--timeout", invalid_timeout)
+            failure = json.loads(r.stdout)
+            status = json.loads(run_client(state_b, "daemon", "status", "--json").stdout)
+            step(f"restart timeout {invalid_timeout} rejected without stopping healthy daemon",
+                 r.returncode == 1 and not failure.get("ok") and bool(failure.get("error"))
+                 and (state_b / "daemon.pid").read_text() == old_pid
+                 and status.get("connected") and status.get("room_joined"), tail(r.stdout))
         no_relay_env = client_env(state_b)
         no_relay_env.pop("MUSE_UM_RELAY_URL", None)
         r = subprocess.run(

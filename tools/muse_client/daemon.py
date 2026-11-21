@@ -17,6 +17,7 @@ from __future__ import annotations
 import asyncio
 import ctypes
 import json
+import math
 import os
 import signal
 import subprocess
@@ -531,6 +532,8 @@ def daemon_restart(state_dir: Path | None = None, timeout: float = 60.0) -> dict
         return value
 
     try:
+        if not math.isfinite(timeout) or timeout <= 0:
+            return result("Restart timeout must be a positive finite number")
         relay_url = require_relay_url()
         live = daemon_call({"command": "status"}, state_dir, timeout=1.0)
         path = state_dir / "session.json"
@@ -539,6 +542,8 @@ def daemon_restart(state_dir: Path | None = None, timeout: float = 60.0) -> dict
                    and live.get("room_joined") and isinstance(saved, dict))
         saved = saved if isinstance(saved, dict) else {}
         room = _last_room(state_dir, saved)
+        if time.monotonic() >= deadline:
+            return result("Restart deadline expired before daemon stop")
         old_pid = daemon_pid(state_dir)
         stopped = daemon_stop(state_dir)
         if not stopped.get("ok") and stopped.get("error") not in (
@@ -547,16 +552,16 @@ def daemon_restart(state_dir: Path | None = None, timeout: float = 60.0) -> dict
             return result(stopped.get("error", "daemon stop failed"))
 
         def wait_stopped(until: float) -> bool:
-            while time.monotonic() < until:
+            while True:
                 remaining = until - time.monotonic()
                 ping = daemon_call({"command": "ping"}, state_dir,
-                                   timeout=min(0.2, remaining))
+                                   timeout=max(0.001, min(0.2, remaining)))
                 if not pid_alive(old_pid) and ping is None:
                     return True
                 remaining = until - time.monotonic()
-                if remaining > 0:
-                    time.sleep(min(0.1, remaining))
-            return False
+                if remaining <= 0:
+                    return False
+                time.sleep(min(0.1, remaining))
 
         grace_deadline = min(deadline, time.monotonic() + 1.0)
         if not wait_stopped(grace_deadline):
@@ -567,8 +572,6 @@ def daemon_restart(state_dir: Path | None = None, timeout: float = 60.0) -> dict
                     pass
             if not wait_stopped(deadline):
                 return result("Old daemon did not stop before restart deadline; refusing to start")
-        if time.monotonic() >= deadline:
-            return result("Restart deadline expired before daemon start")
         if not healthy and path.exists():
             name = "session.json.bak-" + time.strftime("%Y%m%d-%H%M")
             target = state_dir / name
