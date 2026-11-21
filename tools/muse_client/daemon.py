@@ -58,6 +58,9 @@ def _last_room(state_dir: Path, saved: dict) -> str | None:
     room = saved.get("room_id") or saved.get("last_room_id")
     if room:
         return room
+    room = _read_dict(state_dir / DAEMON_STATUS_FILE).get("room_id")
+    if room:
+        return room
     try:
         valid_session = isinstance(
             json.loads((state_dir / "session.json").read_text(encoding="utf-8")), dict
@@ -70,7 +73,7 @@ def _last_room(state_dir: Path, saved: dict) -> str | None:
         if backups:
             backup = _read_dict(backups[0])
             room = backup.get("room_id") or backup.get("last_room_id")
-    return room or _read_dict(state_dir / DAEMON_STATUS_FILE).get("room_id")
+    return room
 
 
 def _repo_root() -> Path:

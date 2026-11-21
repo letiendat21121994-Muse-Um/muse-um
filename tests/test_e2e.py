@@ -911,6 +911,21 @@ def main() -> int:
                  and new_backup.read_text() == invalid and backup.read_bytes() == before
                  and status.get("room_id") == room_id, tail(r.stdout + r.stderr))
 
+        r = run_client(state_b, "room", "create", "--name", "older-backup-room")
+        match = ROOM_RE.search(r.stdout)
+        older_room = match.group(0) if match else None
+        run_client(state_b, "room", "join", room_id)
+        (state_b / "session.json.bak-older-room").write_text(json.dumps({"room_id": older_room}))
+        (state_b / "daemon-status.json").write_text(json.dumps({"room_id": room_id}))
+        session_path.write_text("not JSON")
+        r = run_client(state_b, "daemon", "restart", "--timeout", "25")
+        restart = json.loads(r.stdout)
+        status = json.loads(run_client(state_b, "daemon", "status", "--json").stdout)
+        step("corrupt session restart prefers current status room over older backup room",
+             bool(older_room) and older_room != room_id and r.returncode == 0
+             and restart.get("ok") and status.get("room_id") == room_id
+             and status.get("room_joined"), tail(r.stdout))
+
         # Không cần pair; hook luôn được bật lại sau khôi phục.
         rec = subprocess.run(
             ["bash", str(REPO_ROOT / "hooks" / "recover-daemon.sh")],
@@ -978,6 +993,14 @@ other = state.parent / "other-state-ipc"
 (state / "daemon-status.json").write_text('{"room_id": "legacy-room"}')
 (state / "session.json").write_text('{"room_id": null}')
 existing_room = _last_room(state, {"room_id": None})
+session_room = _last_room(state, {"room_id": "session-room"})
+status_rooms = []
+for invalid in ("not JSON", "[]"):
+    (state / "session.json").write_text(invalid)
+    status_rooms.append(_last_room(state, {}))
+(state / "daemon-status.json").write_text('{"room_id": null}')
+(state / "session.json").write_text('{"room_id": null}')
+valid_empty_room = _last_room(state, {"room_id": None})
 invalid_rooms = []
 for invalid in ("not JSON", "[]"):
     (state / "session.json").write_text(invalid)
@@ -986,7 +1009,9 @@ for invalid in ("not JSON", "[]"):
 absent_room = _last_room(state, {})
 checks = {
     "room_backup_scope": (existing_room == "legacy-room" and absent_room == "backup-room"
-                          and invalid_rooms == ["backup-room", "backup-room"]),
+                          and invalid_rooms == ["backup-room", "backup-room"]
+                          and session_room == "session-room" and valid_empty_room is None
+                          and status_rooms == ["legacy-room", "legacy-room"]),
     "unix_endpoint": ipc.endpoint(state) == str(state / "daemon.sock"),
     "pipe_names": (ipc.pipe_name(state).startswith("\\\\\\\\.\\\\pipe\\\\muse-um-")
                    and ipc.pipe_name(state) == ipc.pipe_name(state / ".")
