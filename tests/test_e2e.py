@@ -846,6 +846,19 @@ def main() -> int:
 
         # --- 11. recovery (PROTOCOL.md §13) --------------------------------
         session_path = state_b / "session.json"
+        old_pid = (state_b / "daemon.pid").read_text()
+        no_relay_env = client_env(state_b)
+        no_relay_env.pop("MUSE_UM_RELAY_URL", None)
+        r = subprocess.run(
+            [PY, "-m", "tools.muse_client", "daemon", "restart"],
+            cwd=str(REPO_ROOT), env=no_relay_env,
+            capture_output=True, text=True, timeout=15)
+        failure = json.loads(r.stdout)
+        status = json.loads(run_client(state_b, "daemon", "status", "--json").stdout)
+        step("restart without relay URL returns error and leaves running daemon connected",
+             r.returncode == 1 and not failure.get("ok") and bool(failure.get("error"))
+             and (state_b / "daemon.pid").read_text() == old_pid
+             and status.get("connected") and status.get("room_joined"), tail(r.stdout))
         before = session_path.read_bytes()
         previous_session = json.loads(before)
         previous_backups = set(state_b.glob("session.json.bak-*"))

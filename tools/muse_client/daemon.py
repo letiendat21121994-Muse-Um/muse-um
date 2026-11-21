@@ -529,6 +529,7 @@ def daemon_restart(state_dir: Path | None = None, timeout: float = 60.0) -> dict
         return value
 
     try:
+        relay_url = require_relay_url()
         live = daemon_call({"command": "status"}, state_dir, timeout=1.0)
         path = state_dir / "session.json"
         saved = load_session(state_dir)
@@ -576,7 +577,7 @@ def daemon_restart(state_dir: Path | None = None, timeout: float = 60.0) -> dict
             path.rename(target)
             backup = target.name
             save_session({"room_id": room, "last_room_id": room,
-                          "relay_url": saved.get("relay_url") or require_relay_url()}, state_dir)
+                          "relay_url": saved.get("relay_url") or relay_url}, state_dir)
         launched = daemon_start(state_dir)
         if not launched.get("ok"):
             return result(launched.get("error", "daemon start failed"))
