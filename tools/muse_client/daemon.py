@@ -57,11 +57,12 @@ def _last_room(state_dir: Path, saved: dict) -> str | None:
     room = saved.get("room_id") or saved.get("last_room_id")
     if room:
         return room
-    backups = sorted(state_dir.glob("session.json.bak-*"),
-                     key=lambda p: p.stat().st_mtime_ns, reverse=True)
-    if backups:
-        backup = _read_dict(backups[0])
-        room = backup.get("room_id") or backup.get("last_room_id")
+    if not (state_dir / "session.json").exists():
+        backups = sorted(state_dir.glob("session.json.bak-*"),
+                         key=lambda p: p.stat().st_mtime_ns, reverse=True)
+        if backups:
+            backup = _read_dict(backups[0])
+            room = backup.get("room_id") or backup.get("last_room_id")
     return room or _read_dict(state_dir / DAEMON_STATUS_FILE).get("room_id")
 
 
