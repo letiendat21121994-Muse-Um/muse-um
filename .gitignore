@@ -1,0 +1,33 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+
+# muse-um runtime state — never commit (tokens, sessions, root ids)
+session.json
+session.json.bak-*
+account.token
+token-key
+root-id
+room-queue.jsonl
+daemon-status.json
+daemon.sock
+daemon.pid
+daemon.log
+room-watch-state.json
+hooks.disabled
+*.log
+
+# Local env / secrets
+.env
+.env.*
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

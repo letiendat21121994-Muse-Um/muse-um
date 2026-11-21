@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>muse-um — Control Center</title>
+<style>
+  body { font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+         max-width: 860px; margin: 0 auto; padding: 16px;
+         background: #f6f6f4; color: #222; line-height: 1.5; }
+  h1 { font-size: 1.5em; margin-bottom: 4px; }
+  h2 { font-size: 1.15em; margin-top: 28px; border-bottom: 1px solid #ccc;
+       padding-bottom: 4px; }
+  .card { background: #fff; border: 1px solid #ddd; border-radius: 8px;
+          padding: 14px 16px; margin: 10px 0; }
+  .status-ok { color: #1a7f37; font-weight: bold; }
+  .status-bad { color: #b3261e; font-weight: bold; }
+  label { display: block; margin: 8px 0 2px; font-weight: 600; }
+  input[type=text], select { width: 100%; box-sizing: border-box;
+         padding: 8px; font-size: 1em; border: 1px solid #bbb;
+         border-radius: 6px; }
+  button { padding: 8px 14px; font-size: 1em; border-radius: 6px;
+           border: 1px solid #888; background: #fff; cursor: pointer;
+           margin-top: 8px; }
+  button.primary { background: #1a7f37; color: #fff; border-color: #1a7f37; }
+  button:disabled { opacity: .5; cursor: default; }
+  .row { display: flex; gap: 8px; align-items: flex-end; flex-wrap: wrap; }
+  .row > * { flex: 1; min-width: 140px; }
+  table { border-collapse: collapse; width: 100%; }
+  th, td { text-align: left; border-bottom: 1px solid #eee; padding: 6px 4px;
+           font-size: .95em; }
+  code { background: #eee; padding: 1px 5px; border-radius: 4px;
+         font-size: .95em; word-break: break-all; }
+  .token-box { background: #fff8e1; border: 2px solid #d4a017;
+               border-radius: 8px; padding: 12px; margin: 10px 0; }
+  .token-box code { font-size: 1.05em; }
+  .warning { color: #8a6d00; font-weight: 600; }
+  .error { color: #b3261e; }
+  .muted { color: #666; font-size: .9em; }
+  .pair-code { font-size: 1.8em; letter-spacing: .2em; font-weight: bold; }
+  .hidden { display: none; }
+</style>
+</head>
+<body>
+<h1>muse-um — Control Center</h1>
+<p class="muted">Trang quản trị Relay / Panel. Chỉ dùng trên máy host hoặc qua mạng riêng (Tailscale).</p>
+
+<h2>Trạng thái Relay</h2>
+<div class="card" id="status-card">
+  <div id="status-text">Đang tải trạng thái…</div>
+  <button id="btn-refresh-status" type="button">Làm mới</button>
+</div>
+
+<h2>Tạo tài khoản</h2>
+<div class="card">
+  <form id="form-account">
+    <label for="account-name">Tên tài khoản</label>
+    <input type="text" id="account-name" required maxlength="100"
+           placeholder="Ví dụ: Rocky" autocomplete="off">
+    <button class="primary" type="submit">Tạo tài khoản</button>
+  </form>
+  <div id="token-box" class="token-box hidden">
+    <p class="warning">⚠️ Token đăng nhập chỉ hiện MỘT LẦN này thôi. Hãy copy ngay và
+    gửi riêng cho chủ tài khoản. Không dán token lung tung (chat chung,
+    phòng chung, ảnh chụp màn hình).</p>
+    <p>Tài khoản: <strong id="token-account-name"></strong>
+       (<code id="token-account-id"></code>)</p>
+    <p>Token:<br><code id="token-value"></code></p>
+    <button id="btn-copy-token" type="button">Copy token</button>
+    <button id="btn-hide-token" type="button">Đã copy xong — ẩn token</button>
+    <span id="copy-feedback" class="muted"></span>
+  </div>
+  <div id="account-error" class="error"></div>
+</div>
+
+<h2>Tạo mã pair</h2>
+<div class="card">
+  <p class="muted">Mã pair có 8 ký tự, dùng một lần, hết hạn sau 5 phút. Dùng để một
+  Muse mới đăng nhập lần đầu.</p>
+  <form id="form-pair">
+    <label for="pair-account">Tài khoản</label>
+    <select id="pair-account"></select>
+    <button class="primary" type="submit">Tạo mã pair</button>
+  </form>
+  <div id="pair-result" class="hidden">
+    <p>Mã pair: <span class="pair-code" id="pair-code"></span></p>
+    <p class="muted">Hết hạn sau: <span id="pair-countdown"></span></p>
+  </div>
+  <div id="pair-error" class="error"></div>
+</div>
+
+<h2>Tài khoản</h2>
+<div class="card">
+  <button id="btn-refresh-accounts" type="button">Làm mới danh sách</button>
+  <table>
+    <thead><tr><th>Tên</th><th>Account ID</th></tr></thead>
+    <tbody id="accounts-body"><tr><td colspan="2">Chưa tải.</td></tr></tbody>
+  </table>
+</div>
+
+<h2>Phòng chat</h2>
+<div class="card">
+  <form id="form-room">
+    <label for="room-name">Tên phòng mới</label>
+    <input type="text" id="room-name" maxlength="100"
+           placeholder="Ví dụ: Phòng chung" autocomplete="off">
+    <label for="room-members">Mời sẵn các tài khoản (giữ Ctrl/Cmd để chọn nhiều)</label>
+    <select id="room-members" multiple size="4"></select>
+    <button class="primary" type="submit">Tạo phòng</button>
+  </form>
+  <div id="room-error" class="error"></div>
+  <div id="room-created" class="muted"></div>
+</div>
+<div class="card">
+  <button id="btn-refresh-rooms" type="button">Làm mới danh sách phòng</button>
+  <table>
+    <thead><tr><th>Tên phòng</th><th>Room ID</th><th>Thành viên</th><th>Tin nhắn</th></tr></thead>
+    <tbody id="rooms-body"><tr><td colspan="4">Chưa tải.</td></tr></tbody>
+  </table>
+</div>
+
+<h2>Mời tài khoản vào phòng</h2>
+<div class="card">
+  <form id="form-invite">
+    <div class="row">
+      <div>
+        <label for="invite-room">Phòng</label>
+        <select id="invite-room"></select>
+      </div>
+      <div>
+        <label for="invite-account">Tài khoản</label>
+        <select id="invite-account"></select>
+      </div>
+    </div>
+    <button class="primary" type="submit">Mời vào phòng</button>
+  </form>
+  <div id="invite-result" class="muted"></div>
+  <div id="invite-error" class="error"></div>
+</div>
+
+<p class="muted">Lưu ý: trang này không bao giờ hiển thị root_id hay token (trừ ô
+token một lần lúc tạo tài khoản). Trạng thái root chỉ hiện “đang hoạt
+động / chưa hoạt động”.</p>
+
+<script src="/static/app.js"></script>
+</body>
+</html>
