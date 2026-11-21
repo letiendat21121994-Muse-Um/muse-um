@@ -915,16 +915,28 @@ def main() -> int:
         match = ROOM_RE.search(r.stdout)
         older_room = match.group(0) if match else None
         run_client(state_b, "room", "join", room_id)
-        (state_b / "session.json.bak-older-room").write_text(json.dumps({"room_id": older_room}))
-        (state_b / "daemon-status.json").write_text(json.dumps({"room_id": room_id}))
-        session_path.write_text("not JSON")
-        r = run_client(state_b, "daemon", "restart", "--timeout", "25")
-        restart = json.loads(r.stdout)
-        status = json.loads(run_client(state_b, "daemon", "status", "--json").stdout)
-        step("corrupt session restart prefers current status room over older backup room",
-             bool(older_room) and older_room != room_id and r.returncode == 0
-             and restart.get("ok") and status.get("room_id") == room_id
-             and status.get("room_joined"), tail(r.stdout))
+        for newest in ("status", "backup"):
+            run_client(state_b, "daemon", "stop")
+            backup_room_path = state_b / "session.json.bak-other-room"
+            status_path = state_b / "daemon-status.json"
+            backup_room_path.write_text(json.dumps({"room_id": older_room}))
+            status_path.write_text(json.dumps({"room_id": room_id}))
+            for old_backup in state_b.glob("session.json.bak-*"):
+                os.utime(old_backup, ns=(1_000_000_000, 1_000_000_000))
+            status_stamp = 3_000_000_000 if newest == "status" else 2_000_000_000
+            backup_stamp = 3_000_000_000 if newest == "backup" else 2_000_000_000
+            os.utime(status_path, ns=(status_stamp, status_stamp))
+            os.utime(backup_room_path, ns=(backup_stamp, backup_stamp))
+            session_path.write_text("not JSON")
+            r = run_client(state_b, "daemon", "restart", "--timeout", "25")
+            restart = json.loads(r.stdout)
+            status = json.loads(run_client(state_b, "daemon", "status", "--json").stdout)
+            expected_room = room_id if newest == "status" else older_room
+            step(f"corrupt session restart chooses {newest} room when its mtime is newer",
+                 bool(older_room) and older_room != room_id and r.returncode == 0
+                 and restart.get("ok") and status.get("room_id") == expected_room
+                 and status.get("room_joined"), tail(r.stdout))
+        run_client(state_b, "room", "join", room_id)
 
         # Không cần pair; hook luôn được bật lại sau khôi phục.
         rec = subprocess.run(
@@ -982,6 +994,7 @@ def main() -> int:
             [PY, "-c", '''
 import asyncio
 import json
+import os
 import sys
 from pathlib import Path
 from tools.muse_client import ipc, winservice
@@ -991,6 +1004,8 @@ state = Path(sys.argv[1])
 other = state.parent / "other-state-ipc"
 (state / "session.json.bak-test").write_text('{"room_id": "backup-room"}')
 (state / "daemon-status.json").write_text('{"room_id": "legacy-room"}')
+os.utime(state / "session.json.bak-test", ns=(1_000_000_000, 1_000_000_000))
+os.utime(state / "daemon-status.json", ns=(2_000_000_000, 2_000_000_000))
 (state / "session.json").write_text('{"room_id": null}')
 existing_room = _last_room(state, {"room_id": None})
 session_room = _last_room(state, {"room_id": "session-room"})
@@ -1007,11 +1022,16 @@ for invalid in ("not JSON", "[]"):
     invalid_rooms.append(_last_room(state, {}))
 (state / "session.json").unlink()
 absent_room = _last_room(state, {})
+(state / "session.json.bak-invalid").write_text('not JSON')
+(state / "session.json.bak-empty").write_text('{"room_id": null}')
+os.utime(state / "session.json.bak-test", ns=(3_000_000_000, 3_000_000_000))
+backup_room = _last_room(state, {})
 checks = {
     "room_backup_scope": (existing_room == "legacy-room" and absent_room == "backup-room"
                           and invalid_rooms == ["backup-room", "backup-room"]
                           and session_room == "session-room" and valid_empty_room is None
-                          and status_rooms == ["legacy-room", "legacy-room"]),
+                          and status_rooms == ["legacy-room", "legacy-room"]
+                          and backup_room == "backup-room"),
     "unix_endpoint": ipc.endpoint(state) == str(state / "daemon.sock"),
     "pipe_names": (ipc.pipe_name(state).startswith("\\\\\\\\.\\\\pipe\\\\muse-um-")
                    and ipc.pipe_name(state) == ipc.pipe_name(state / ".")

@@ -58,22 +58,25 @@ def _last_room(state_dir: Path, saved: dict) -> str | None:
     room = saved.get("room_id") or saved.get("last_room_id")
     if room:
         return room
-    room = _read_dict(state_dir / DAEMON_STATUS_FILE).get("room_id")
-    if room:
-        return room
     try:
         valid_session = isinstance(
             json.loads((state_dir / "session.json").read_text(encoding="utf-8")), dict
         )
     except (OSError, ValueError):
         valid_session = False
+    paths = [state_dir / DAEMON_STATUS_FILE]
     if not valid_session:
-        backups = sorted(state_dir.glob("session.json.bak-*"),
-                         key=lambda p: p.stat().st_mtime_ns, reverse=True)
-        if backups:
-            backup = _read_dict(backups[0])
-            room = backup.get("room_id") or backup.get("last_room_id")
-    return room
+        paths.extend(state_dir.glob("session.json.bak-*"))
+    candidates = []
+    for path in paths:
+        saved_room = _read_dict(path)
+        room = saved_room.get("room_id") or saved_room.get("last_room_id")
+        if room:
+            try:
+                candidates.append((path.stat().st_mtime_ns, room))
+            except OSError:
+                pass
+    return max(candidates, key=lambda candidate: candidate[0])[1] if candidates else None
 
 
 def _repo_root() -> Path:
