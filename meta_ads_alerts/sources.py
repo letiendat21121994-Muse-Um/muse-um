@@ -3,9 +3,10 @@ import os
 import re
 from dataclasses import dataclass
 from datetime import datetime, time, timedelta, timezone
+from http.client import HTTPException
 from math import isfinite
 from typing import Protocol
-from urllib.error import HTTPError, URLError
+from urllib.error import HTTPError
 from urllib.parse import urlencode
 from urllib.request import HTTPRedirectHandler, Request, build_opener
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -210,14 +211,14 @@ class MetaSource:
         except HTTPError as error:
             try:
                 data = json.load(error)
-            except (ValueError, OSError):
+            except (HTTPException, OSError, ValueError):
                 data = None
             finally:
                 error.close()
             info = data.get("error") if isinstance(data, dict) else None
             code = info.get("code") if isinstance(info, dict) else None
             raise SourceError(f"Meta từ chối yêu cầu (HTTP {error.code}).", code) from None
-        except (URLError, OSError, ValueError):
+        except (HTTPException, OSError, ValueError):
             raise SourceError("Không đọc được dữ liệu từ Meta. Kiểm tra kết nối và thử lại.") from None
         if not isinstance(data, dict) or "error" in data:
             raise SourceError("Meta không trả về dữ liệu hợp lệ.")

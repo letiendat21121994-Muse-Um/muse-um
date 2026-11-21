@@ -5,6 +5,7 @@ import tempfile
 import unittest
 from dataclasses import replace
 from datetime import datetime, timezone
+from http.client import IncompleteRead
 from pathlib import Path
 from urllib.error import HTTPError
 from urllib.parse import parse_qs, urlsplit
@@ -141,8 +142,58 @@ class MetaSourceTests(unittest.TestCase):
         self.assertEqual(error.exception.code, 190)
         self.assertNotIn("fake-test-token", str(error.exception))
 
+    def test_incomplete_response_becomes_source_error_even_for_http_error_body(self):
+        class Truncated(io.BytesIO):
+            def read(self, *args):
+                raise IncompleteRead(b"fake-test-token", 100)
+
+        for status in (200, 502):
+            def fake(request, timeout):
+                response = Truncated()
+                if status != 200:
+                    raise HTTPError(request.full_url, status, "upstream failure", {}, response)
+                return response
+
+            source = MetaSource("fake-test-token", "42", open_request=fake)
+            with self.subTest(status=status), self.assertRaises(SourceError) as result:
+                source.snapshot(7)
+            self.assertNotIn("fake-test-token", str(result.exception))
+
 
 class DeliveryTests(unittest.TestCase):
+    def test_monitor_loop_marks_unexpected_poll_failure_and_recovers(self):
+        class Fixture:
+            calls = 0
+
+            def snapshot(self, days):
+                self.calls += 1
+                if self.calls == 2:
+                    raise RuntimeError("detail must not be exposed")
+                return DemoSource().snapshot(days)
+
+        states = []
+
+        class Stop:
+            def is_set(self):
+                return len(states) == 3
+
+            def wait(self, seconds):
+                states.append(monitor.state())
+                return self.is_set()
+
+        with tempfile.TemporaryDirectory() as temp:
+            monitor = Monitor(Fixture(), "demo", Config(), Path(temp) / "alerts.jsonl")
+            monitor.run(Stop())
+
+        first, failed, recovered = states
+        self.assertIsNone(first["error"])
+        self.assertIsNotNone(first["snapshot"])
+        self.assertEqual(failed["snapshot"], first["snapshot"])
+        self.assertIn("Kiểm tra thất bại", failed["error"])
+        self.assertNotIn("detail must not be exposed", failed["error"])
+        self.assertIsNotNone(failed["last_attempt"])
+        self.assertIsNone(recovered["error"])
+
     def test_log_deduplicates_alerts_and_last_good_snapshot_survives_failure(self):
         class Fixture:
             fail = False

@@ -74,7 +74,14 @@ class Monitor:
 
     def run(self, stop):
         while not stop.is_set():
-            self.poll()
+            try:
+                self.poll()
+            except Exception:
+                with self._lock:
+                    self._state.update(
+                        error="Kiểm tra thất bại; app sẽ thử lại ở chu kỳ tiếp theo.",
+                        last_attempt=datetime.now(timezone.utc).isoformat(),
+                    )
             stop.wait(self.config.poll_seconds)
 
 
