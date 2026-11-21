@@ -849,6 +849,7 @@ def main() -> int:
         before = session_path.read_bytes()
         previous_session = json.loads(before)
         previous_backups = set(state_b.glob("session.json.bak-*"))
+        old_pid = (state_b / "daemon.pid").read_text()
         r = run_client(state_b, "daemon", "restart", "--timeout", "25")
         restart = json.loads(r.stdout)
         current_session = json.loads(session_path.read_bytes())
@@ -859,6 +860,11 @@ def main() -> int:
              and all(current_session.get(key) == previous_session.get(key)
                      for key in ("room_id", "last_room_id")), tail(r.stdout + r.stderr))
         before = session_path.read_bytes()
+        status = json.loads(run_client(state_b, "daemon", "status", "--json").stdout)
+        step("restart replaces old pid and leaves daemon running",
+             (state_b / "daemon.pid").read_text() != old_pid
+             and status.get("daemon") == "running" and status.get("connected")
+             and status.get("room_joined"))
 
         run_client(state_b, "daemon", "stop")
         (state_b / "daemon-status.json").write_text('{"room_id": null}')

@@ -536,9 +536,36 @@ def daemon_restart(state_dir: Path | None = None, timeout: float = 60.0) -> dict
                    and live.get("room_joined") and isinstance(saved, dict))
         saved = saved if isinstance(saved, dict) else {}
         room = _last_room(state_dir, saved)
+        old_pid = daemon_pid(state_dir)
         stopped = daemon_stop(state_dir)
-        if not stopped.get("ok") and stopped.get("error") != "daemon is not running":
+        if not stopped.get("ok") and stopped.get("error") not in (
+            "daemon is not running", "daemon did not stop"
+        ):
             return result(stopped.get("error", "daemon stop failed"))
+
+        def wait_stopped(until: float) -> bool:
+            while time.monotonic() < until:
+                remaining = until - time.monotonic()
+                ping = daemon_call({"command": "ping"}, state_dir,
+                                   timeout=min(0.2, remaining))
+                if not pid_alive(old_pid) and ping is None:
+                    return True
+                remaining = until - time.monotonic()
+                if remaining > 0:
+                    time.sleep(min(0.1, remaining))
+            return False
+
+        grace_deadline = min(deadline, time.monotonic() + 1.0)
+        if not wait_stopped(grace_deadline):
+            if pid_alive(old_pid):
+                try:
+                    os.kill(old_pid, signal.SIGTERM)
+                except ProcessLookupError:
+                    pass
+            if not wait_stopped(deadline):
+                return result("Old daemon did not stop before restart deadline; refusing to start")
+        if time.monotonic() >= deadline:
+            return result("Restart deadline expired before daemon start")
         if not healthy and path.exists():
             name = "session.json.bak-" + time.strftime("%Y%m%d-%H%M")
             target = state_dir / name
