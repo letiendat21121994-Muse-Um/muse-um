@@ -1002,6 +1002,21 @@ async def framing():
     return (replies[0].get("pong") and not replies[1].get("ok")
             and not replies[2].get("ok") and not (state / "daemon.sock").exists())
 
+async def startup_status():
+    legacy_state = state / "legacy"
+    legacy_state.mkdir()
+    (legacy_state / "daemon-status.json").write_text('{"room_id": "legacy-room"}')
+    daemon = Daemon("http://127.0.0.1:1", legacy_state)
+    observed = {}
+
+    async def capture_startup():
+        observed.update(json.loads((legacy_state / "daemon-status.json").read_text()))
+
+    daemon._serve_forever = capture_startup
+    await daemon.run()
+    return observed.get("room_id") == "legacy-room" and not observed.get("room_joined")
+
+checks["legacy_status"] = asyncio.run(startup_status())
 checks["framing"] = asyncio.run(framing())
 print(json.dumps(checks))
 ''', str(ipc_state)],
@@ -1010,6 +1025,8 @@ print(json.dumps(checks))
         detail = tail(check.stdout + check.stderr)
         step("room backups used only when session.json is absent",
              checks.get("room_backup_scope", False), detail)
+        step("initial status write preserves legacy room without claiming joined",
+             checks.get("legacy_status", False), detail)
         step("IPC endpoint: Unix daemon.sock path", checks.get("unix_endpoint", False), detail)
         step("Windows pipe names: deterministic, prefixed, unique per state dir",
              checks.get("pipe_names", False), detail)

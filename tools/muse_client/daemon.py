@@ -342,6 +342,7 @@ class Daemon:
         pid_path = state_path(DAEMON_PID_FILE, self.state_dir)
         pid_path.write_text(str(os.getpid()), encoding="utf-8")
         self._sock_server = await ipc.start_server(self._handle_socket, self.state_dir)
+        self.room_id = self._saved_room
         self.write_status()
         self._status_task = asyncio.create_task(self._status_writer())
         loop = asyncio.get_running_loop()
