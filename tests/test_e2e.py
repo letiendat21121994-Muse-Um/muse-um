@@ -38,7 +38,9 @@ What it does (see PROTOCOL.md for the contract each step checks):
      after a status rewrite, and recover-daemon.sh hook re-enabling.
  12. Unreachable Relay: login retries keep the daemon alive, status exposes
      errors/attempts, restart timeout is JSON, and stop interrupts backoff.
- 13. GET /health -> 200 (re-checked at the end).
+ 13. Unix IPC endpoint/framing, deterministic Windows pipe names, and
+     Windows service module import without pywin32 on Linux.
+ 14. GET /health -> 200 (re-checked at the end).
 
 Every step prints [PASS]/[FAIL]; the exit code is non-zero if any step
 fails. All child processes are terminated and temp dirs removed on exit.
@@ -931,7 +933,63 @@ def main() -> int:
         finally:
             run_client(scratch, "daemon", "stop")
 
-        # --- 13. /health again at the end -----------------------------------
+        # --- 13. IPC and Windows service groundwork ------------------------
+        ipc_state = tmp / "state-ipc"
+        ipc_state.mkdir()
+        check = subprocess.run(
+            [PY, "-c", '''
+import asyncio
+import json
+import sys
+from pathlib import Path
+from tools.muse_client import ipc, winservice
+from tools.muse_client.daemon import Daemon
+
+state = Path(sys.argv[1])
+other = state.parent / "other-state-ipc"
+checks = {
+    "unix_endpoint": ipc.endpoint(state) == str(state / "daemon.sock"),
+    "pipe_names": (ipc.pipe_name(state).startswith("\\\\\\\\.\\\\pipe\\\\muse-um-")
+                   and ipc.pipe_name(state) == ipc.pipe_name(state / ".")
+                   and ipc.pipe_name(state) != ipc.pipe_name(other)
+                   and len(ipc.pipe_name(state).rsplit("-", 1)[1]) == 16),
+    "service_import": callable(winservice.main) and "win32serviceutil" not in sys.modules,
+}
+
+async def framing():
+    (state / "daemon.sock").touch()
+    daemon = Daemon("http://127.0.0.1:1", state)
+    server = await ipc.start_server(daemon._handle_socket, state)
+    replies = []
+    try:
+        for request in (json.dumps({"command": "ping", "padding": "x" * 80000}), "{bad", ""):
+            reader, writer = await ipc.open_connection(state, 2)
+            try:
+                writer.write((request + "\\n").encode())
+                await writer.drain()
+                replies.append(json.loads(await asyncio.wait_for(reader.readline(), 2)))
+            finally:
+                writer.close()
+                await writer.wait_closed()
+    finally:
+        await ipc.close_server(server, state)
+    return (replies[0].get("pong") and not replies[1].get("ok")
+            and not replies[2].get("ok") and not (state / "daemon.sock").exists())
+
+checks["framing"] = asyncio.run(framing())
+print(json.dumps(checks))
+''', str(ipc_state)],
+            cwd=str(REPO_ROOT), capture_output=True, text=True, timeout=15)
+        checks = json.loads(check.stdout) if check.returncode == 0 else {}
+        detail = tail(check.stdout + check.stderr)
+        step("IPC endpoint: Unix daemon.sock path", checks.get("unix_endpoint", False), detail)
+        step("Windows pipe names: deterministic, prefixed, unique per state dir",
+             checks.get("pipe_names", False), detail)
+        step("winservice imports on Linux without pywin32", checks.get("service_import", False), detail)
+        step("IPC newline framing: no half-close, large request, invalid/empty JSON, cleanup",
+             checks.get("framing", False), detail)
+
+        # --- 14. /health again at the end -----------------------------------
         code_http, health = http_json("GET", "/health")
         step("GET /health -> 200 at end",
              code_http == 200 and health.get("status") == "ok",

@@ -546,6 +546,28 @@ lại sau đó, kể cả khi thất bại. Không cần mã pair. Nếu Relay k
 làm mất phòng, daemon vẫn đăng nhập nhưng không vào phòng; hãy join phòng
 mới (restart sẽ báo timeout nếu chưa vào phòng).
 
+### Dịch vụ Windows (thiết lập thủ công)
+
+Trên Windows, daemon dùng named pipe riêng cho từng thư mục state.
+Cài `python -m pip install -r requirements.txt` (có pywin32 trên Windows),
+rồi chạy trong terminal có quyền quản trị:
+
+```powershell
+python -m tools.muse_client.winservice install
+python -m tools.muse_client.winservice start
+# Khi cần dừng hoặc gỡ:
+python -m tools.muse_client.winservice stop
+python -m tools.muse_client.winservice remove
+```
+
+Đặt biến môi trường **hệ thống** `MUSE_UM_RELAY_URL` và `MUSE_UM_STATE_DIR`
+trước khi chạy dịch vụ; có thể cần khởi động lại máy để Service Control
+Manager nhận biến mới. Dùng đường dẫn state tuyệt đối đã pair/login và
+cấp quyền đọc/ghi cho tài khoản chạy dịch vụ. Tài khoản đó cũng cần truy
+cập được môi trường Python và import repo này. Không chạy daemon bằng CLI
+cùng lúc với dịch vụ trên cùng thư mục state. Đây mới là khung dịch vụ,
+chưa có bộ cài; named pipe và dịch vụ vẫn cần kiểm chứng trực tiếp trên Windows.
+
 ### 10.3. Khi nào quy trình trên KHÔNG đủ
 
 - **APP_OFFLINE:** nếu daemon báo `APP_OFFLINE: No Panel/app connection is

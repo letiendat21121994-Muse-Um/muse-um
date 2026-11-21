@@ -5,7 +5,7 @@
   (``via_account_login: true``) and re-joins the saved room.
 - Appends every incoming ``room_message`` NOT authored by self to
   ``room-queue.jsonl``.
-- Serves the CLI over the Unix socket ``daemon.sock``:
+- Serves the CLI over a local Unix socket or Windows named pipe:
   JSON ``{command, ...}`` -> ``{ok, ...}`` / ``{ok:false, error}``.
 - Writes ``daemon.pid``, ``daemon.log`` (via the spawn parent) and
   ``daemon-status.json``.
@@ -15,6 +15,7 @@
 from __future__ import annotations
 
 import asyncio
+import ctypes
 import json
 import os
 import signal
@@ -22,12 +23,13 @@ import subprocess
 import sys
 import time
 from pathlib import Path
+from ctypes import wintypes
 
+from . import ipc
 from .client import MissingRelayUrlError, RelayClient, RelayError, require_relay_url
 from .state import (
     DAEMON_LOG_FILE,
     DAEMON_PID_FILE,
-    DAEMON_SOCK_FILE,
     DAEMON_STATUS_FILE,
     ROOM_QUEUE_FILE,
     append_queue,
@@ -88,7 +90,7 @@ class Daemon:
         self.login_attempts = 0
         self._saved_room = _last_room(self.state_dir, _read_dict(self.state_dir / "session.json"))
         self._stop = asyncio.Event()
-        self._sock_server: asyncio.AbstractServer | None = None
+        self._sock_server = None
         self._status_task: asyncio.Task | None = None
 
     # -- status --------------------------------------------------------
@@ -220,10 +222,10 @@ class Daemon:
             except asyncio.TimeoutError:
                 pass
 
-    # -- Unix socket API ---------------------------------------------------
+    # -- Local IPC API -----------------------------------------------------
     async def _handle_socket(self, reader, writer) -> None:
         try:
-            raw = await reader.read()
+            raw = await reader.readline()
             if not raw:
                 return
             try:
@@ -334,20 +336,11 @@ class Daemon:
 
     async def _shutdown(self) -> None:
         self._stop.set()
-        if self._sock_server is not None:
-            self._sock_server.close()
 
     async def run(self) -> None:
         pid_path = state_path(DAEMON_PID_FILE, self.state_dir)
         pid_path.write_text(str(os.getpid()), encoding="utf-8")
-        sock_path = state_path(DAEMON_SOCK_FILE, self.state_dir)
-        try:
-            sock_path.unlink()
-        except FileNotFoundError:
-            pass
-        self._sock_server = await asyncio.start_unix_server(
-            self._handle_socket, path=str(sock_path)
-        )
+        self._sock_server = await ipc.start_server(self._handle_socket, self.state_dir)
         self.write_status()
         self._status_task = asyncio.create_task(self._status_writer())
         loop = asyncio.get_running_loop()
@@ -362,12 +355,7 @@ class Daemon:
             if self._status_task is not None:
                 self._status_task.cancel()
             if self._sock_server is not None:
-                self._sock_server.close()
-                await self._sock_server.wait_closed()
-            try:
-                sock_path.unlink()
-            except FileNotFoundError:
-                pass
+                await ipc.close_server(self._sock_server, self.state_dir)
             try:
                 pid_path.unlink()
             except FileNotFoundError:
@@ -403,6 +391,22 @@ def daemon_pid(state_dir: Path | None = None) -> int | None:
 def pid_alive(pid: int | None) -> bool:
     if pid is None:
         return False
+    if sys.platform == "win32":
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        kernel32.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
+        kernel32.OpenProcess.restype = wintypes.HANDLE
+        kernel32.GetExitCodeProcess.argtypes = [wintypes.HANDLE, ctypes.POINTER(wintypes.DWORD)]
+        kernel32.GetExitCodeProcess.restype = wintypes.BOOL
+        kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
+        kernel32.CloseHandle.restype = wintypes.BOOL
+        handle = kernel32.OpenProcess(0x1000, False, pid)
+        if not handle:
+            return False
+        try:
+            exit_code = wintypes.DWORD()
+            return bool(kernel32.GetExitCodeProcess(handle, ctypes.byref(exit_code))) and exit_code.value == 259
+        finally:
+            kernel32.CloseHandle(handle)
     try:
         os.kill(pid, 0)
     except OSError:
@@ -411,15 +415,13 @@ def pid_alive(pid: int | None) -> bool:
 
 
 async def _socket_request(req: dict, state_dir: Path, timeout: float = 15.0) -> dict:
-    sock_path = state_path(DAEMON_SOCK_FILE, state_dir)
-    reader, writer = await asyncio.wait_for(
-        asyncio.open_unix_connection(str(sock_path)), timeout=timeout
-    )
+    reader, writer = await ipc.open_connection(state_dir, timeout)
     try:
         writer.write(json.dumps(req).encode("utf-8") + b"\n")
         await writer.drain()
-        writer.write_eof()
-        raw = await asyncio.wait_for(reader.read(), timeout=timeout)
+        if writer.can_write_eof():
+            writer.write_eof()
+        raw = await asyncio.wait_for(reader.readline(), timeout=timeout)
     finally:
         writer.close()
     return json.loads(raw.decode("utf-8"))
@@ -482,6 +484,10 @@ def daemon_start(state_dir: Path | None = None) -> dict:
         return {"ok": True, "already_running": True}
     log_path = state_path(DAEMON_LOG_FILE, state_dir)
     log_fh = open(log_path, "ab")
+    spawn_options = (
+        {"creationflags": subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP}
+        if sys.platform == "win32" else {"start_new_session": True}
+    )
     try:
         proc = subprocess.Popen(
             [sys.executable, "-m", "tools.muse_client", "daemon", "_run"],
@@ -491,8 +497,8 @@ def daemon_start(state_dir: Path | None = None) -> dict:
             stdin=subprocess.DEVNULL,
             stdout=log_fh,
             stderr=log_fh,
-            start_new_session=True,
             close_fds=True,
+            **spawn_options,
         )
     finally:
         log_fh.close()
