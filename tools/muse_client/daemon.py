@@ -58,7 +58,13 @@ def _last_room(state_dir: Path, saved: dict) -> str | None:
     room = saved.get("room_id") or saved.get("last_room_id")
     if room:
         return room
-    if not (state_dir / "session.json").exists():
+    try:
+        valid_session = isinstance(
+            json.loads((state_dir / "session.json").read_text(encoding="utf-8")), dict
+        )
+    except (OSError, ValueError):
+        valid_session = False
+    if not valid_session:
         backups = sorted(state_dir.glob("session.json.bak-*"),
                          key=lambda p: p.stat().st_mtime_ns, reverse=True)
         if backups:

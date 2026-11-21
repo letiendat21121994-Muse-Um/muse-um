@@ -978,10 +978,15 @@ other = state.parent / "other-state-ipc"
 (state / "daemon-status.json").write_text('{"room_id": "legacy-room"}')
 (state / "session.json").write_text('{"room_id": null}')
 existing_room = _last_room(state, {"room_id": None})
+invalid_rooms = []
+for invalid in ("not JSON", "[]"):
+    (state / "session.json").write_text(invalid)
+    invalid_rooms.append(_last_room(state, {}))
 (state / "session.json").unlink()
 absent_room = _last_room(state, {})
 checks = {
-    "room_backup_scope": existing_room == "legacy-room" and absent_room == "backup-room",
+    "room_backup_scope": (existing_room == "legacy-room" and absent_room == "backup-room"
+                          and invalid_rooms == ["backup-room", "backup-room"]),
     "unix_endpoint": ipc.endpoint(state) == str(state / "daemon.sock"),
     "pipe_names": (ipc.pipe_name(state).startswith("\\\\\\\\.\\\\pipe\\\\muse-um-")
                    and ipc.pipe_name(state) == ipc.pipe_name(state / ".")
@@ -1031,7 +1036,7 @@ print(json.dumps(checks))
             cwd=str(REPO_ROOT), capture_output=True, text=True, timeout=15)
         checks = json.loads(check.stdout) if check.returncode == 0 else {}
         detail = tail(check.stdout + check.stderr)
-        step("room backups used only when session.json is absent",
+        step("room backups used for absent/invalid sessions, not valid empty room state",
              checks.get("room_backup_scope", False), detail)
         step("initial status write preserves legacy room without claiming joined",
              checks.get("legacy_status", False), detail)
