@@ -10,13 +10,13 @@ Verified **2026-11-21**, against vendors' own public pages using `curl -L`; Chro
 
 Profile: individual in Vietnam; no company or student status; small/new public GitHub OSS project. Ranking below is practical value for the next month, not nominal dollar value. Recurring free tiers outrank competitive grants and review queues. A **Yes** means worth using/applying under the stated conditions, not that an account or grant has been approved. Application instructions below are for the owner to perform later.
 
-**Counts: 32 candidates: 20 verified offers worth considering (including 2 review-based programs), 7 verified unavailable/blocked candidates, and 5 unverified candidates.** Thus 27 candidates have a verified current disposition; only 20 are recommendations. Country eligibility and unpublished quotas are separately qualified, never inferred from a successful page fetch.
+**Counts: 32 candidates: 21 verified offers worth considering (including 2 review-based programs), 7 verified unavailable/blocked candidates, and 4 unverified candidates.** Thus 28 candidates have a verified current disposition; only 21 are recommendations. Country eligibility and unpublished quotas are separately qualified, never inferred from a successful page fetch.
 
 Unless a detail says otherwise, the cited offer page publishes **no enrollment deadline or fixed end date**; a recurring tier is ongoing only while the vendor maintains it. For vendors whose reviewed offer page does not publish a country list, **Vietnam account acceptance is unverified**; absence of a restriction is not proof of worldwide eligibility. Company/student/popularity requirements are not imposed by the cited ordinary individual tiers unless stated. Normal account, age, legal/export and anti-abuse rules still apply. Do not use a VPN or false country to bypass restrictions.
 
 ## Summary — ordered by value for this developer
 
-Each vendor link is also the starting point for the owner's eventual enrollment. Detailed eligibility, expiry and application notes follow.
+Each vendor link is also the starting point for the owner's eventual enrollment. Detailed eligibility, expiry and application notes follow. Candidate numbers are stable IDs, not ranks; Groq (#30) moved into the recommendations after review verification on 2026-11-21.
 
 | # | Candidate and official source | Exact verified offer / duration | Eligibility and Vietnam caveat | Verdict |
 |---|---|---|---|---|
@@ -27,6 +27,7 @@ Each vendor link is also the starting point for the owner's eventual enrollment.
 | 5 | [Google AI Studio / Gemini API](https://ai.google.dev/gemini-api/docs/pricing) | Selected models have $0 input/output; e.g. Gemini 4 Hydrogen; model/project rate limits, not unlimited | Individual access; [Vietnam explicitly supported](https://ai.google.dev/gemini-api/docs/available-regions); age/account terms apply | **Yes — verified:** useful API experimentation |
 | 6 | [OpenRouter free models](https://openrouter.ai/docs/api/reference/limits) | `:free` variants: 20 requests/minute, 50/day without a credit purchase; recurring | Individual account; model/provider terms differ; Vietnam not explicitly confirmed | **Yes — verified:** small experiments, not production SLA |
 | 7 | [Cloudflare Workers AI](https://developers.cloudflare.com/workers-ai/platform/pricing/) | 10,000 Neurons/day at no charge; resets 00:00 UTC; certain models require payment | Free Workers account; no company/student requirement; Vietnam not explicitly confirmed | **Yes — verified:** bounded hosted inference |
+| 30 | [Groq API free tier](https://console.groq.com/docs/rate-limits) | Free Plan Limits: `openai/gpt-oss-120b` 30 RPM, 1,000 RPD, 8,000 TPM, 200,000 TPD; [Free usage not billed](https://console.groq.com/docs/billing-faqs) | No company/student/popularity gate stated; Vietnam acceptance unverified | **Yes — verified, conditional:** bounded API experiments |
 | 8 | [Amazon Q Developer Free](https://aws.amazon.com/q/developer/pricing/) | $0; 50 agentic requests/month across IDE and CLI | Individual Builder ID route; no company needed; country acceptance not explicitly confirmed | **Yes — verified:** additional coding-agent budget |
 | 9 | [Kiro Free](https://kiro.dev/pricing/) | $0; 50 credits/month, perpetual free tier; not 50 guaranteed prompts | Individual; model multipliers apply; Vietnam not explicitly confirmed | **Yes — verified:** bounded agent fallback |
 | 10 | [Google Cloud trial](https://cloud.google.com/free/docs/free-cloud-features) | $300 Welcome credit for 90 days, or until exhausted | New trial/non-paying history; payment verification; [Vietnam billing listed](https://cloud.google.com/billing/docs/resources/currency) | **Yes — verified, conditional:** largest general trial |
@@ -49,7 +50,6 @@ Each vendor link is also the starting point for the owner's eventual enrollment.
 | 27 | [Hugging Face inference credits](https://huggingface.co/docs/inference-providers/pricing) | Free users: **no** included monthly credits; purchase required | $2 monthly credits belong to paid PRO, not free accounts | **No — verified unavailable as free credits** |
 | 28 | [Gemini CLI free tier](https://geminicli.com/docs/resources/quota-and-pricing/) | CLI docs still advertise 1,000 Google-login requests/day or 250 unpaid-key requests/day; conflicting consumer retirement notice | [Google's retirement notice](https://developers.google.com/gemini-code-assist/resources/available-locations) explicitly includes CLI | **No — unverified current usability:** conflicting official sources |
 | 29 | [Windsurf Free](https://windsurf.com/pricing) | Requested pricing URL redirects to Devin pricing; current standalone Windsurf free offer not verified | Identity/current product mapping unresolved | **No — unverified:** not a separate new Devin recommendation |
-| 30 | [Groq API free tier](https://console.groq.com/docs/rate-limits) | Current fetched table describes Developer-plan base limits, not a verified $0 allowance | Free entitlement and Vietnam acceptance unverified | **No — unverified:** do not relabel paid-plan limits as free |
 | 31 | [Mistral Experiment API tier](https://help.mistral.ai/en/articles/455206-what-is-the-experiment-plan) | Experiment help URL missing; current [pricing](https://mistral.ai/pricing) confirms free chat/Vibe, not a free API grant | Free API amount/duration/eligibility unverified | **No — unverified:** chat is not API credits |
 | 32 | [Vercel OSS sponsorship](https://vercel.com/oss) | Current page catalogs Vercel OSS projects; no application entitlement/amount verified | Sponsorship eligibility and Vietnam acceptance unverified | **No — unverified:** do not imply free Pro sponsorship |
 
@@ -182,9 +182,16 @@ Each vendor link is also the starting point for the owner's eventual enrollment.
 - **Eligibility/application:** Form accepts a person's project and proposed use of Codex CLI/models; no mandatory incorporation/student status or numeric stars/download threshold is visible. Selection remains entirely discretionary. [OpenAI supported countries](https://platform.openai.com/docs/supported-countries) explicitly lists **Vietnam**; that confirms API-region support, not grant approval. Owner would later submit the form linked above; no application was entered.
 - **Deadline/expiry/verdict:** Rolling review; grant-credit duration **unverified/unpublished**. **Yes, low priority:** an OSS individual can consider applying, but do not plan next month's work around an uncertain award.
 
+### 30. Groq free API tier — verified after review
+
+- **Offer and limits:** Rechecked in Chrome on **2026-11-21**: the [rate-limit page](https://console.groq.com/docs/rate-limits) has a separate **Free Plan Limits** tab despite nearby Developer-plan explanatory text. With Free selected, `openai/gpt-oss-120b` lists **30 RPM, 1,000 requests/day, 8,000 tokens/minute, 200,000 tokens/day**. Limits are model-specific and apply at the organization level; hitting any limit can block a request. The owner's eventual Limits page is authoritative for their account, not a promise of production capacity.
+- **Free entitlement:** The [billing FAQ](https://console.groq.com/docs/billing-faqs) explicitly distinguishes Free from the paid Developer tier: Developer requires a payment method; after a completed downgrade to Free, usage-based charges stop immediately and Free limits/restrictions apply. Outstanding Developer usage must still be paid. This verifies a Free tier, not a promotional dollar credit or unlimited tokens.
+- **Eligibility/application:** No company/student/OSS-popularity gate stated on these pages. Owner can start from the vendor console and create an API key on Free without upgrading to Developer. **Vietnam account acceptance remains unverified**; no signup or authenticated API test was performed.
+- **Deadline/expiry/verdict:** No published enrollment deadline or fixed Free-tier end date on these pages. **Yes, conditional:** useful bounded API experiments if legitimately available to the owner in Vietnam.
+
 ## Not available / blocked / unverified
 
-These are research outcomes, **not offers available to this profile**. Together with the Netlify prerequisite blocker in §20, they account for the seven verified unavailable/blocked and five unverified candidates. Discontinued offers appear only to explain rejection; they are excluded from the 20 recommendations. No expired promotion or referral-only offer is recommended.
+These are research outcomes, **not offers available to this profile**. Together with the Netlify prerequisite blocker in §20, they account for the seven verified unavailable/blocked and four unverified candidates. Discontinued offers appear only to explain rejection; they are excluded from the 21 recommendations. No expired promotion or referral-only offer is recommended.
 
 ### 22. GitHub Copilot Pro for popular OSS maintainers — blocked
 
@@ -225,10 +232,6 @@ The page also permits exceptional “ecosystem quietly depends on” application
 ### 29. Windsurf Free — unverified identity/current offer
 
 [`https://windsurf.com/pricing`](https://windsurf.com/pricing) redirects to `https://devin.ai/pricing`. Destination advertises a $0 tier with light agent quota, limited models, unlimited inline edits/Tab, but this does **not** verify a separate current standalone Windsurf allowance. **No:** avoid inventing legacy prompt-credit quantities or re-reporting an already-held vendor as a new deal. Standalone application route, Vietnam support, amount/duration and current product mapping remain unverified; no signup was attempted.
-
-### 30. Groq free API tier — unverified
-
-[Fetched rate-limit docs](https://console.groq.com/docs/rate-limits) label their table **base limits for the Developer plan**; the checked [pricing URL](https://groq.com/pricing) resolves to general positioning, and the checked [billing docs](https://console.groq.com/docs/billing) return a missing-page message. This does not prove no free tier exists, but it does not substantiate a current $0 grant either. **No pending verification:** free amount/duration, enrollment conditions and Vietnam acceptance unverified. Owner should first obtain a current vendor free-plan entitlement page before using console onboarding; do not copy these Developer limits into a free-tier recommendation.
 
 ### 31. Mistral Experiment API tier — unverified
 
