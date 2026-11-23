@@ -86,7 +86,8 @@ function VideoDetail({video:v,batch,action,busy}: {video:DraftVideo;batch:BatchV
         <label className="check"><input type="checkbox" checked={values.included} onChange={e=>setValues({...values,included:e.target.checked})}/>Đưa video vào chiến dịch</label>
         <label>Nhóm quảng cáo <select disabled={batch.config.structure==="shared"} value={batch.config.structure==="shared"?"shared":values.group_key}
           onChange={e=>setValues({...values,group_key:e.target.value})}>
-          {!batch.config.groups.some(g=>g.key===values.group_key)&&<option value={values.group_key}>Chưa được gán</option>}
+          <option value="">Mặc định: {batch.config.groups[0]?.name}</option>
+          {values.group_key&&!batch.config.groups.some(g=>g.key===values.group_key)&&<option value={values.group_key}>Nhóm không còn tồn tại</option>}
           {batch.config.groups.map(g=><option key={g.key} value={g.key}>{g.name}</option>)}</select></label>
         <label>URL đích <input type="url" placeholder="Dùng cấu hình chung nếu để trống" value={values.destination} onChange={e=>setValues({...values,destination:e.target.value})}/></label>
         <label>Tracking <input placeholder="Dùng cấu hình chung nếu để trống" value={values.tracking} onChange={e=>setValues({...values,tracking:e.target.value})}/></label>
@@ -195,7 +196,8 @@ function VideoRow({v,source,issue,adList,sourceLocked,action,busy,mode,selected,
         <small>{mode==="library"?source.name+" · ":""}{v.duration?`${Math.ceil(v.duration)} giây`:"Chưa đọc thời lượng"}</small></span></div></td>
     <td><span className={"pill "+(v.status==="ready"?"ok":v.status.includes("failed")?"bad":"")}>{videoStages[v.status]||v.status}</span></td>
     <td>{v.variants.filter(c=>c.selected).length} / {v.variants.length}{!v.included&&<small>Đã loại khỏi lô</small>}</td>
-    <td>{source.config.structure==="shared"?"Nhóm chung":source.config.groups.find(g=>g.key===v.group_key)?.name||"Chưa gán nhóm"}
+    <td>{source.config.structure==="shared"?"Nhóm chung":!v.group_key ? source.config.groups[0]?.name+" (mặc định)" :
+      source.config.groups.find(g=>g.key===v.group_key)?.name||"Nhóm không còn tồn tại"}
       {issue&&<small>{issue.reason}</small>}{adList.length>0&&<small>{adList.map(a=>adStages[a.state]).join(" · ")}</small>}
       {v.error&&<small className="danger-text">{v.error}</small>}</td>
     <td><div className="actions">{!sourceLocked&&v.status==="failed"&&<button disabled={busy} onClick={()=>void action(`videos/${v.id}/retry`,{})}>Thử lại xử lý</button>}

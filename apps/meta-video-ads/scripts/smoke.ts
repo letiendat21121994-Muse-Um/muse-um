@@ -86,6 +86,14 @@ try {
     return !v.regenerating&&v.variants.length===5?v:undefined;
   },"Không tạo lại copy.");
   assert.equal(regenerated.variants.find(c=>c.id===variant.id)?.data.headline,"Bản đã chỉnh");
+  await ok(post("videos/"+variant.video_id+"/edit",cookie,{included:true,group_key:"shared",destination:"",tracking:"ref=manual"}));
+  await ok(post("videos/"+variant.video_id+"/context",cookie,{url:"https://example.org/individual"}));
+  await ok(post(base+"/bulk",cookie,{ids:[variant.video_id],all:false,overwrite:false,group:"other",destination:"https://example.com/bulk",tracking:"ref=bulk"}));
+  const retained=(await show()).videos.find(v=>v.id===variant.video_id)!;
+  assert.equal(retained.group_key,"shared");
+  assert.equal(retained.tracking,"ref=manual");
+  assert.equal(retained.overrides.url,"https://example.org/individual");
+  assert.equal(retained.destination,"");
   const review=await ok<Preview>(call(base+"/preview",cookie));
   assert.equal(review.plan.length,3);
   assert.equal(review.plan.find(ad=>ad.videoId===real.id)?.destination,"https://example.org/original");

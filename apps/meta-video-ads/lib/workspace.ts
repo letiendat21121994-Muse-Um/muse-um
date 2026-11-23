@@ -107,7 +107,7 @@ export function preview(d: Db, batch: Batch) {
     const destination = v.destination || parse<Context>(v.overrides).url || config.destination || parse<Context>(batch.context).url ||
       (v.sample ? "https://example.com/hair-studio" : "");
     const tracking = v.tracking || config.tracking;
-    const group = config.structure === "shared" ? "shared" : v.group_key;
+    const group = config.structure === "shared" ? "shared" : v.group_key || config.groups[0].key;
     const reason = !v.included ? "Đã bỏ chọn" : v.status !== "ready" ? "Video chưa xử lý xong" :
       !variants.some(c => c.selected) ? "Chưa chọn copy" : !httpUrl.safeParse(destination).success ? "Thiếu URL đích hợp lệ" :
       !trackingValid(tracking) ? "Tracking không hợp lệ" : "";

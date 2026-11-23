@@ -4,12 +4,12 @@ import { resolve } from "node:path";
 import { Readable } from "node:stream";
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
-import { db, type Db } from "../../../lib/db";
+import { db, parse, type Db } from "../../../lib/db";
 import { aiEnabled } from "../../../lib/ai";
 import { addVideo, addVideos, absent, assertDraft, audit, batchView, createBatch, enqueue, InputError, newSession, ownedBatch, ownedVariant,
   ownedVideo, preview, publish, session, sessionAge, type Batch } from "../../../lib/workspace";
 import { bytesLimit, durationLimit, mimeSchema, saveStream } from "../../../lib/media";
-import { configSchema, contextSchema, copySchema, dayInZone, httpUrl, trackingValid } from "../../../lib/domain";
+import { configSchema, contextSchema, copySchema, dayInZone, httpUrl, trackingValid, type Context } from "../../../lib/domain";
 import { retryPublish } from "../../../lib/jobs";
 import { report, reportCsv } from "../../../lib/reporting";
 import { samples } from "../../../lib/samples";
@@ -199,14 +199,15 @@ async function write(request: NextRequest, path: string[]) {
       }));
       const changed = d.tx(() => {
         assertDraft(ownedBatch(d,user,key));
-        const rows = d.all<{id:string;destination:string;tracking:string;group_key:string}>("SELECT id,destination,tracking,group_key FROM video WHERE batch_id=?",key);
+        const rows = d.all<{id:string;destination:string;tracking:string;group_key:string;overrides:string}>(
+          "SELECT id,destination,tracking,group_key,overrides FROM video WHERE batch_id=?",key);
         const targets = data.all ? rows : rows.filter(v => data.ids.includes(v.id));
         if (!targets.length) throw new InputError("Chọn ít nhất một dòng.");
         for (const v of targets) {
           d.run("UPDATE video SET destination=?,tracking=?,group_key=? WHERE id=?",
-            data.destination !== undefined && (data.overwrite || !v.destination) ? data.destination : v.destination,
+            data.destination !== undefined && (data.overwrite || (!v.destination && !parse<Context>(v.overrides).url)) ? data.destination : v.destination,
             data.tracking !== undefined && (data.overwrite || !v.tracking) ? data.tracking : v.tracking,
-            data.group !== undefined && (data.overwrite || v.group_key === "shared") ? data.group : v.group_key,v.id);
+            data.group !== undefined && (data.overwrite || !v.group_key) ? data.group : v.group_key,v.id);
         }
         return targets.length;
       });
@@ -224,7 +225,7 @@ async function write(request: NextRequest, path: string[]) {
       return json({ok:true});
     }
     if (action === "edit") {
-      const data = await payload(request,z.object({included:z.boolean(),group_key:group,destination:url,tracking}));
+      const data = await payload(request,z.object({included:z.boolean(),group_key:group.or(z.literal("")),destination:url,tracking}));
       d.tx(() => {
         assertDraft(ownedBatch(d,user,v.batch_id));
         d.run("UPDATE video SET included=?,group_key=?,destination=?,tracking=? WHERE id=?",

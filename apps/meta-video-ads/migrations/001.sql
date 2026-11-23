@@ -8,7 +8,7 @@ CREATE TABLE video(
   id TEXT PRIMARY KEY, batch_id TEXT NOT NULL REFERENCES batch(id), filename TEXT NOT NULL, mime TEXT NOT NULL,
   status TEXT NOT NULL, created_at TEXT NOT NULL, error TEXT, duration REAL, thumb INTEGER NOT NULL DEFAULT 0,
   sample TEXT, overrides TEXT NOT NULL DEFAULT '{}', included INTEGER NOT NULL DEFAULT 1,
-  group_key TEXT NOT NULL DEFAULT 'shared', destination TEXT NOT NULL DEFAULT '',
+  group_key TEXT NOT NULL DEFAULT '', destination TEXT NOT NULL DEFAULT '',
   tracking TEXT NOT NULL DEFAULT '', use_ai INTEGER NOT NULL DEFAULT 0
 );
 CREATE TABLE analysis(
