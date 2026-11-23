@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Builds dist/MetaVideoAds-Portable-win-x64.zip: unzip on Windows 10/11 x64 and double-click "Mo Meta Video Ads.bat".
 set -euo pipefail
+command -v sha256sum >/dev/null || sha256sum() { shasum -a 256 "$@"; }
 cd "$(dirname "$0")/.."
 NODE_VERSION="${NODE_VERSION:-24.22.2}"
 FFMPEG_ZIP="${FFMPEG_ZIP:-ffmpeg-n8.1-latest-win64-lgpl-shared-8.1}"
