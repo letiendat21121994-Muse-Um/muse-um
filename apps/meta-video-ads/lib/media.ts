@@ -17,6 +17,17 @@ export const bytesLimit = () => bounded(process.env.MAX_VIDEO_MB,60,250) * 1024 
 export const durationLimit = () => bounded(process.env.MAX_VIDEO_SECONDS,180,900);
 export const mimeSchema = z.enum(["video/mp4","video/quicktime","video/webm"]);
 
+export async function probeContainer(path: string, mime: string) {
+  const {stdout} = await run("ffprobe", ["-v","error","-protocol_whitelist","file","-f",mime === "video/webm" ? "matroska" : "mov",
+    "-show_entries","stream=codec_type:format=duration","-of","json",path], {timeout:15_000,maxBuffer:128_000});
+  const info=JSON.parse(stdout) as {streams?:{codec_type:string}[];format?:{duration:string}};
+  const duration=Number(info.format?.duration);
+  return {
+    hasVideo: !!info.streams?.some(s=>s.codec_type==="video"),
+    duration: Number.isFinite(duration)&&duration>0 ? duration : undefined,
+  };
+}
+
 async function webmVideoDuration(path: string) {
   const {stdout}=await run("ffprobe",["-v","error","-protocol_whitelist","file","-f","matroska","-show_packets",
     "-select_streams","v:0","-show_entries","packet=pts_time,duration_time","-of","compact=p=0",path],
@@ -51,16 +62,9 @@ export async function saveStream(stream: ReadableStream<Uint8Array> | null, path
 }
 export async function inspect(path: string, mime: string, thumbnail: string) {
   try {
-    const {stdout} = await run("ffprobe", ["-v","error","-protocol_whitelist","file","-f",mime === "video/webm" ? "matroska" : "mov",
-      "-show_entries","stream=codec_type:format=duration","-of","json",path], { timeout:15_000,maxBuffer:128_000 });
-    const info = JSON.parse(stdout) as {streams?:{codec_type:string}[];format?:{duration:string}};
-    if (!info.streams?.some(s => s.codec_type === "video")) {
-      throw new InputError("Tệp không có video hợp lệ.");
-    }
-    let duration=Number(info.format?.duration);
-    if (mime==="video/webm" && (!Number.isFinite(duration) || duration<=0)) {
-      duration=await webmVideoDuration(path);
-    }
+    const {hasVideo,duration:declared}=await probeContainer(path,mime);
+    if (!hasVideo) throw new InputError("Tệp không có video hợp lệ.");
+    const duration=declared ?? (mime==="video/webm" ? await webmVideoDuration(path) : 0);
     if (!Number.isFinite(duration) || duration<=0) throw new InputError("Tệp không có thời lượng hợp lệ.");
     if (duration > durationLimit()) throw new InputError(`Video dài hơn ${durationLimit()} giây.`);
     await run("ffmpeg", ["-v","error","-nostdin","-protocol_whitelist","file","-threads","1","-f",

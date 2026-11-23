@@ -9,6 +9,7 @@ import { tick,retryPublish } from "../lib/jobs.ts";
 import { defaultConfig,dayInZone } from "../lib/domain.ts";
 import { report,reportCsv } from "../lib/reporting.ts";
 import { inspect } from "../lib/media.ts";
+import { analyze } from "../lib/ai.ts";
 import { addVideo,addVideos,batchView,createBatch,ownedBatch,ownedVideo,preview,publish,newSession,session, type Ad } from "../lib/workspace.ts";
 
 test("WebM with no container duration is measured through the last frame",async()=>{
@@ -34,6 +35,27 @@ test("WebM with no container duration is measured through the last frame",async(
   } finally {
     if (oldLimit===undefined) delete process.env.MAX_VIDEO_SECONDS;
     else process.env.MAX_VIDEO_SECONDS=oldLimit;
+    rmSync(root,{force:true,recursive:true});
+  }
+});
+
+test("Gemini does not send a short WebM video track with unverified or long container duration",async t=>{
+  const root=mkdtempSync(join(tmpdir(),"meta-gemini-duration-"));
+  const originalKey=process.env.GEMINI_API_KEY;
+  try {
+    process.env.GEMINI_API_KEY="mock-only";
+    const fetch=t.mock.method(globalThis,"fetch",()=>{throw new Error("No network allowed");});
+    const stream=join(root,"stream.webm"), remuxed=join(root,"remuxed.webm"), thumb=join(root,"thumb.jpg");
+    execFileSync("ffmpeg",["-loglevel","error","-f","lavfi","-i","color=c=blue:s=160x160:r=25:d=1",
+      "-f","lavfi","-i","sine=d=61","-c:v","libvpx-vp9","-c:a","libopus","-live","1",stream]);
+    assert.ok(await inspect(stream,"video/webm",thumb)<2);
+    await assert.rejects(analyze(null,{},{path:stream,mime:"video/webm"}),/thời lượng container xác định/);
+    execFileSync("ffmpeg",["-loglevel","error","-i",stream,"-c","copy",remuxed]);
+    await assert.rejects(analyze(null,{},{path:remuxed,mime:"video/webm"}),/tối đa 12 MiB và 60 giây/);
+    assert.equal(fetch.mock.callCount(),0);
+  } finally {
+    if (originalKey===undefined) delete process.env.GEMINI_API_KEY;
+    else process.env.GEMINI_API_KEY=originalKey;
     rmSync(root,{force:true,recursive:true});
   }
 });

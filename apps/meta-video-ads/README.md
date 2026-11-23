@@ -31,7 +31,7 @@ Mở **http://127.0.0.1:3000**. Sao chép `.env.example` thành `.env.local` n�
 
 ## Gemini (tuỳ chọn, không cần cho demo)
 
-Chỉ bật khi đã có key được phép dùng và chấp nhận điều khoản/chi phí của provider. Inject `GEMINI_API_KEY` vào server; `GEMINI_MODEL` mặc định `gemini-2.5-flash`. Không dùng biến `NEXT_PUBLIC_*`. Khởi động lại app, chọn ô gửi video tới Gemini trước khi tải lên. Upload Gemini giới hạn 12 MiB / 60 giây và gửi nội dung video cùng bối cảnh đã lưu; server xác minh JSON theo schema. Copy mới dùng analysis lưu sẵn, không gửi lại video. Video mẫu luôn dùng fixture; upload ở chế độ mô phỏng không được nhận là quan sát thật. Kiểm tra tuyên bố trước khi dùng; adapter chưa gọi trực tiếp vì chưa dùng credential.
+Chỉ bật khi đã có key được phép dùng và chấp nhận điều khoản/chi phí của provider. Inject `GEMINI_API_KEY` vào server; `GEMINI_MODEL` mặc định `gemini-2.5-flash`. Không dùng biến `NEXT_PUBLIC_*`. Khởi động lại app, chọn ô gửi video tới Gemini trước khi tải lên. Gemini nhận tệp tối đa 12 MiB với thời lượng container xác định không quá 60 giây, cùng bối cảnh đã lưu; server xác minh JSON theo schema. WebM thiếu metadata thời lượng chỉ dùng được ở chế độ mô phỏng. Copy mới dùng analysis lưu sẵn, không gửi lại video. Video mẫu luôn dùng fixture; upload ở chế độ mô phỏng không được nhận là quan sát thật. Kiểm tra tuyên bố trước khi dùng; adapter chưa gọi trực tiếp vì chưa dùng credential.
 
 Tài liệu: [Gemini video](https://ai.google.dev/gemini-api/docs/video-understanding) · [Structured output](https://ai.google.dev/gemini-api/docs/structured-output).
 

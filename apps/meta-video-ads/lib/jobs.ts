@@ -69,7 +69,7 @@ async function analyzeJob(d: Db, j: Job) {
   const previous = d.one<{data: string}>("SELECT data FROM analysis WHERE video_id=?",v.id);
   const snapshot = { ...parse<Context>(batch.context), ...parse<Context>(v.overrides) };
   const analysis = previous ? parse<Analysis>(previous.data) :
-    await analyze(v.sample,snapshot,v.use_ai ? {path:original,mime:v.mime,duration} : undefined);
+    await analyze(v.sample,snapshot,v.use_ai ? {path:original,mime:v.mime} : undefined);
   const options = parse<{revision?: number; replace?: boolean}>(j.payload);
   const variants = await generate({ ...analysis, provided: snapshot },v.filename,options.revision);
   withLease(d,j,() => {
