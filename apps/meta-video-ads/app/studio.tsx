@@ -80,7 +80,7 @@ function VideoDetail({video:v,batch,action,busy}: {video:DraftVideo;batch:BatchV
         </>:<p>Chưa có phân tích. Khi xử lý xong, copy sẽ xuất hiện tại đây.</p>}
       </div>
     </div>
-    <form className="card" onSubmit={e=>{e.preventDefault();void action(path+"/edit",{...values,overrides:v.overrides},"Đã lưu thiết lập video.");}}>
+    <form className="card" onSubmit={e=>{e.preventDefault();void action(path+"/edit",values,"Đã lưu thiết lập video.");}}>
       <h3>Thiết lập riêng cho video</h3>
       <fieldset disabled={busy||locked} className="fields">
         <label className="check"><input type="checkbox" checked={values.included} onChange={e=>setValues({...values,included:e.target.checked})}/>Đưa video vào chiến dịch</label>
@@ -93,8 +93,8 @@ function VideoDetail({video:v,batch,action,busy}: {video:DraftVideo;batch:BatchV
         {!locked&&<div className="wide"><button type="submit">Lưu thiết lập video</button></div>}
       </fieldset>
     </form>
-    <ContextForm value={v.overrides} save={overrides=>action(path+"/edit",{included:!!v.included,destination:v.destination,tracking:v.tracking,
-      group_key:v.group_key,overrides},"Đã lưu bối cảnh riêng. Tạo lại copy để áp dụng.")} busy={busy} disabled={locked} title="Bối cảnh riêng (tuỳ chọn)"/>
+    <ContextForm value={v.overrides} save={overrides=>action(path+"/context",overrides,"Đã lưu bối cảnh riêng. Tạo lại copy để áp dụng.")}
+      busy={busy} disabled={locked} title="Bối cảnh riêng (tuỳ chọn)"/>
     {v.variants.length>0&&<section>
       <div className="section-head"><div><h3>Phiên bản copy</h3><p>So sánh, chỉnh sửa và chọn các phiên bản muốn dùng.</p></div>
         {!locked&&<div className="actions">
@@ -110,7 +110,7 @@ function VideoDetail({video:v,batch,action,busy}: {video:DraftVideo;batch:BatchV
     </section>}
   </div>;
 }
-export function Creations({batch,preview,action,busy,mode,focus}: {batch:BatchView;preview?:Preview;action:Action;busy:boolean;mode:"queue"|"library"|"review";focus?:string}) {
+export function Creations({batch,preview,action,busy,mode,focus,revision}: {batch:BatchView;preview?:Preview;action:Action;busy:boolean;mode:"queue"|"library"|"review";focus?:string;revision?:number}) {
   const [search,setSearch]=useState("");
   const [status,setStatus]=useState("");
   const [open,setOpen]=useState("");
@@ -137,7 +137,7 @@ export function Creations({batch,preview,action,busy,mode,focus}: {batch:BatchVi
       if(current){setExternal(list);setLibraryError("");}
     }).catch(()=>{if(current)setLibraryError("Không tải được các lô khác.");});
     return ()=>{current=false;};
-  },[allBatches,batch.id]);
+  },[allBatches,batch.id,revision]);
   const list=[batch,...(mode==="library"&&allBatches?external:[])].flatMap(source=>source.videos.map(v=>({v,source})))
     .filter(({v})=>v.filename.toLocaleLowerCase("vi").includes(search.toLocaleLowerCase("vi"))&&(!status||v.status===status));
   const bulk=(all:boolean)=>{

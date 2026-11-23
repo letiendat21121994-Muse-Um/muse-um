@@ -72,6 +72,7 @@ export default function Page() {
   const [dragging,setDragging]=useState(false);
   const [reportScope,setReportScope]=useState("");
   const [focusVideo,setFocusVideo]=useState("");
+  const [revision,setRevision]=useState(0);
   const active=useRef("");
   const refreshCounter=useRef(0);
   const busyRef=useRef(false);
@@ -114,6 +115,7 @@ export default function Page() {
       const result=await api<{id?:string}>(path,data);
       if(path==="batches" || path==="session" || path.endsWith("/publish")) await loadWorkspace(result.id);
       await refresh(active.current);
+      setRevision(prev=>prev+1);
       if(message)setNotice(message);
       return true;
     } catch(e) {setError(e instanceof Error ? e.message : "Có lỗi xảy ra.");return false;}
@@ -230,7 +232,7 @@ export default function Page() {
           <div className="footer-actions"><button className="primary" onClick={()=>navigate("review")}>Duyệt & chỉnh sửa →</button></div>
         </div>}
         {batch&&(view==="review"||view==="library")&&<div className="stack">
-          <Creations key={batch.id+view} batch={batch} preview={preview} action={mutate} busy={busy} mode={view} focus={focusVideo}/>
+          <Creations key={batch.id+view} batch={batch} preview={preview} action={mutate} busy={busy} mode={view} focus={focusVideo} revision={revision}/>
           {view==="review"&&<div className="footer-actions"><button className="primary" onClick={()=>navigate("campaign")}>Cài đặt chiến dịch →</button></div>}
         </div>}
         {batch&&view==="campaign"&&<Campaign key={batch.id} config={batch.config} locked={!!batch.published_at} busy={busy}

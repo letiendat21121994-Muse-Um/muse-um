@@ -220,12 +220,20 @@ async function write(request: NextRequest, path: string[]) {
   }
   if (resource === "videos" && key && action) {
     const v = ownedVideo(d,user,key);
-    if (action === "edit") {
-      const data = await payload(request,z.object({overrides:contextSchema,included:z.boolean(),group_key:group,destination:url,tracking}));
+    if (action === "context") {
+      const overrides = await payload(request,contextSchema);
       d.tx(() => {
         assertDraft(ownedBatch(d,user,v.batch_id));
-        d.run("UPDATE video SET overrides=?,included=?,group_key=?,destination=?,tracking=? WHERE id=?",
-          JSON.stringify(data.overrides),Number(data.included),data.group_key,data.destination,data.tracking,key);
+        d.run("UPDATE video SET overrides=? WHERE id=?",JSON.stringify(overrides),key);
+      });
+      return json({ok:true});
+    }
+    if (action === "edit") {
+      const data = await payload(request,z.object({included:z.boolean(),group_key:group,destination:url,tracking}));
+      d.tx(() => {
+        assertDraft(ownedBatch(d,user,v.batch_id));
+        d.run("UPDATE video SET included=?,group_key=?,destination=?,tracking=? WHERE id=?",
+          Number(data.included),data.group_key,data.destination,data.tracking,key);
       });
       return json({ok:true});
     }
