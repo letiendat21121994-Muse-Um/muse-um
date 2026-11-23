@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f5f5ef">
+  <title>Meta Ads Alerts · Bảng theo dõi</title>
+  <link rel="stylesheet" href="/app.css">
+  <script src="/app.js" defer></script>
+</head>
+<body>
+  <header class="top">
+    <div class="top-inner">
+      <div class="brand"><span class="mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 12h4l3-7 4 14 3-7h4"/></svg></span> Meta Ads Alerts</div>
+      <span class="readonly"><span aria-hidden="true">◈</span> Chỉ đọc</span>
+    </div>
+  </header>
+  <main>
+    <section class="hero" aria-labelledby="title">
+      <div>
+        <p class="eyebrow">PACKAGE A <span> / </span> ALERTS ONLY</p>
+        <h1 id="title">Bảng theo dõi Meta Ads</h1>
+        <p class="sub">Phát hiện sớm vấn đề về chi tiêu, delivery và Purchase tracking.</p>
+      </div>
+      <div class="mode" id="mode" hidden></div>
+    </section>
+    <p class="notice" id="notice" role="status">Đang tải bản kiểm tra đầu tiên…</p>
+    <section class="overview" id="overview" aria-labelledby="account" hidden>
+      <div class="section-label">
+        <div><span class="eyebrow">TỔNG QUAN TÀI KHOẢN</span><h2 id="account"></h2></div>
+        <p id="as-of"></p>
+      </div>
+      <dl class="metrics">
+        <div><dt>Chi tiêu hôm nay</dt><dd id="spend">—</dd></div>
+        <div><dt>Purchase được quy gán</dt><dd id="purchases">—</dd></div>
+        <div><dt>CPA</dt><dd id="cpa">—</dd></div>
+        <div><dt>Purchase ROAS</dt><dd id="roas">—</dd></div>
+      </dl>
+    </section>
+    <section class="inbox" id="inbox" aria-labelledby="alerts-title" hidden>
+      <div class="section-label alerts-heading">
+        <div><span class="eyebrow">VIỆC CẦN CHÚ Ý</span><h2 id="alerts-title">Cảnh báo đang mở</h2></div>
+        <p id="counts"></p>
+      </div>
+      <div class="filters" role="group" aria-label="Lọc cảnh báo">
+        <button type="button" data-filter="all" aria-pressed="true">Tất cả</button>
+        <button type="button" data-filter="spend" aria-pressed="false">Chi tiêu</button>
+        <button type="button" data-filter="delivery" aria-pressed="false">Delivery</button>
+        <button type="button" data-filter="tracking" aria-pressed="false">Tracking</button>
+        <button type="button" data-filter="performance" aria-pressed="false">Hiệu suất</button>
+      </div>
+      <div class="workspace">
+        <ul class="alert-list" id="alerts" aria-label="Danh sách cảnh báo"></ul>
+        <article class="detail" id="detail" aria-label="Chi tiết cảnh báo">
+          <p class="eyebrow">CHI TIẾT CẢNH BÁO</p>
+          <div id="detail-content"></div>
+        </article>
+      </div>
+      <p class="footnote" id="poll-info"></p>
+    </section>
+  </main>
+</body>
+</html>

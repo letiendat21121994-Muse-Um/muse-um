@@ -1,0 +1,22 @@
+{
+  "poll_seconds": 3600,
+  "thresholds": {
+    "baseline_days": 7,
+    "min_spend": 30,
+    "min_purchases": 2,
+    "min_impressions": 1000,
+    "cpa_rise": 0.40,
+    "roas_drop": 0.35,
+    "ctr_drop": 0.25,
+    "cpm_rise": 0.40,
+    "cpc_rise": 0.40,
+    "conversion_rate_drop": 0.40,
+    "max_frequency": 3.5,
+    "min_day_fraction": 0.35,
+    "pace_fast": 1.25,
+    "pace_slow": 0.60,
+    "signal_drop": 0.50,
+    "min_expected_events": 4,
+    "zero_purchase_spend": 60
+  }
+}
