@@ -16,6 +16,21 @@ const bounded = (value: string | undefined, fallback: number, max: number) => {
 export const bytesLimit = () => bounded(process.env.MAX_VIDEO_MB,60,250) * 1024 * 1024;
 export const durationLimit = () => bounded(process.env.MAX_VIDEO_SECONDS,180,900);
 export const mimeSchema = z.enum(["video/mp4","video/quicktime","video/webm"]);
+
+async function webmDuration(path: string, streamIds: Set<number>) {
+  const {stdout}=await run("ffprobe",["-v","error","-protocol_whitelist","file","-f","matroska","-show_packets",
+    "-show_entries","packet=stream_index,pts_time,duration_time","-of","compact=p=0",path],
+    {timeout:15_000,maxBuffer:16*1024*1024});
+  let start=Infinity, end=-Infinity;
+  for (const [,index,pts,length] of stdout.matchAll(/^stream_index=(\d+)\|pts_time=([^|\r\n]+)\|duration_time=([^|\r\n]+)/gm)) {
+    const time=Number(pts), duration=Number(length);
+    if (!streamIds.has(Number(index)) || !Number.isFinite(time)) continue;
+    start=Math.min(start,time);
+    end=Math.max(end,time+(duration>0&&Number.isFinite(duration)?duration:0));
+  }
+  return end-start;
+}
+
 export async function saveStream(stream: ReadableStream<Uint8Array> | null, path: string) {
   if (!stream) throw new InputError("Không nhận được video.");
   let size = 0;
@@ -37,17 +52,14 @@ export async function saveStream(stream: ReadableStream<Uint8Array> | null, path
 export async function inspect(path: string, mime: string, thumbnail: string) {
   try {
     const {stdout} = await run("ffprobe", ["-v","error","-protocol_whitelist","file","-f",mime === "video/webm" ? "matroska" : "mov",
-      "-show_entries","stream=codec_type:format=duration","-of","json",path], { timeout:15_000,maxBuffer:128_000 });
-    const info = JSON.parse(stdout);
-    if (!info.streams?.some((s: {codec_type: string}) => s.codec_type === "video")) {
+      "-show_entries","stream=index,codec_type:format=duration","-of","json",path], { timeout:15_000,maxBuffer:128_000 });
+    const info = JSON.parse(stdout) as {streams?:{index:number;codec_type:string}[];format?:{duration:string}};
+    if (!info.streams?.some(s => s.codec_type === "video")) {
       throw new InputError("Tệp không có video hợp lệ.");
     }
     let duration=Number(info.format?.duration);
     if (mime==="video/webm" && (!Number.isFinite(duration) || duration<=0)) {
-      const {stdout:progress}=await run("ffmpeg",["-v","error","-nostdin","-nostats","-progress","pipe:1",
-        "-protocol_whitelist","file","-f","matroska","-i",path,"-map","0:v:0","-map","0:a:0?","-c","copy",
-        "-t",String(durationLimit()+1),"-f","null","-"],{timeout:15_000,maxBuffer:128_000});
-      duration=Math.max(0,...[...progress.matchAll(/^out_time_us=(\d+)$/gm)].map(line=>Number(line[1])/1_000_000));
+      duration=await webmDuration(path,new Set(info.streams.filter(s=>s.codec_type==="video"||s.codec_type==="audio").map(s=>s.index)));
     }
     if (!Number.isFinite(duration) || duration<=0) throw new InputError("Tệp không có thời lượng hợp lệ.");
     if (duration > durationLimit()) throw new InputError(`Video dài hơn ${durationLimit()} giây.`);

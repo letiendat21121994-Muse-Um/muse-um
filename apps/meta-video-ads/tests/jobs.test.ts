@@ -11,16 +11,25 @@ import { report,reportCsv } from "../lib/reporting.ts";
 import { inspect } from "../lib/media.ts";
 import { addVideo,addVideos,batchView,createBatch,ownedBatch,ownedVideo,preview,publish,newSession,session, type Ad } from "../lib/workspace.ts";
 
-test("a decodable WebM with no container duration can be analyzed",async()=>{
+test("WebM with no container duration is measured through the last frame",async()=>{
   const root=mkdtempSync(join(tmpdir(),"meta-webm-test-"));
+  const oldLimit=process.env.MAX_VIDEO_SECONDS;
   try {
     const movie=join(root,"live.webm"), thumb=join(root,"thumb.jpg");
-    execFileSync("ffmpeg",["-loglevel","error","-i","public/samples/ritual.mp4","-t","1","-c:v","libvpx-vp9","-live","1",movie]);
+    execFileSync("ffmpeg",["-loglevel","error","-i","public/samples/ritual.mp4","-vf","fps=3/2","-frames:v","2",
+      "-an","-c:v","libvpx-vp9","-live","1",movie]);
     const duration=execFileSync("ffprobe",["-v","error","-show_entries","format=duration","-of","csv=p=0",movie],{encoding:"utf8"});
     assert.equal(duration.trim(),"N/A");
+    process.env.MAX_VIDEO_SECONDS="2";
     const measured=await inspect(movie,"video/webm",thumb);
-    assert.ok(measured>0.8&&measured<=1.1);
-  } finally {rmSync(root,{force:true,recursive:true});}
+    assert.ok(measured>1.3&&measured<1.4);
+    process.env.MAX_VIDEO_SECONDS="1";
+    await assert.rejects(inspect(movie,"video/webm",thumb),/dài hơn 1 giây/);
+  } finally {
+    if (oldLimit===undefined) delete process.env.MAX_VIDEO_SECONDS;
+    else process.env.MAX_VIDEO_SECONDS=oldLimit;
+    rmSync(root,{force:true,recursive:true});
+  }
 });
 
 test("adding sample videos respects capacity atomically",()=>{
