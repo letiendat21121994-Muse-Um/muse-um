@@ -4,9 +4,9 @@ import { resolve } from "node:path";
 import { Readable } from "node:stream";
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
-import { db, parse, type Db } from "../../../lib/db";
+import { db, type Db } from "../../../lib/db";
 import { aiEnabled } from "../../../lib/ai";
-import { addVideo, absent, assertDraft, audit, batchView, createBatch, enqueue, InputError, newSession, ownedBatch, ownedVariant,
+import { addVideo, addVideos, absent, assertDraft, audit, batchView, createBatch, enqueue, InputError, newSession, ownedBatch, ownedVariant,
   ownedVideo, preview, publish, session, sessionAge, type Batch } from "../../../lib/workspace";
 import { bytesLimit, durationLimit, mimeSchema, saveStream } from "../../../lib/media";
 import { configSchema, contextSchema, copySchema, dayInZone, httpUrl, trackingValid } from "../../../lib/domain";
@@ -160,16 +160,11 @@ async function write(request: NextRequest, path: string[]) {
     const b = ownedBatch(d,user,key);
     if (action === "upload") return upload(d,request,b);
     if (action === "samples") {
-      const data = await payload(request,z.object({keys:z.array(z.string()).min(1).max(samples.length), useDraftDefaults:z.boolean().default(false)}));
+      const data = await payload(request,z.object({keys:z.array(z.string()).min(1).max(samples.length)}));
       if (data.keys.some(k => !samples.some(s => s.key === k))) throw absent();
-      const ids = [];
-      for (const s of samples.filter(s => data.keys.includes(s.key))) ids.push(addVideo(d,b,{filename:s.filename,mime:"video/mp4",sample:s.key}));
-      if (data.useDraftDefaults) d.tx(() => {
-        const current = ownedBatch(d,user,key);
-        assertDraft(current);
-        const cfg = configSchema.parse(parse(current.config));
-        if (!cfg.destination) d.run("UPDATE batch SET config=? WHERE id=?",JSON.stringify({...cfg,destination:"https://example.com/hair-studio"}),key);
-      });
+      const ids = addVideos(d,b,samples.filter(s=>data.keys.includes(s.key)).map(s=>({
+        filename:s.filename,mime:"video/mp4",sample:s.key,
+      })));
       return json({ids},202);
     }
     if (action === "publish") {

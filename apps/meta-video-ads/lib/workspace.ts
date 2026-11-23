@@ -60,19 +60,24 @@ export function enqueue(d: Db, kind: string, target: string, payload = {}) {
       next_at=excluded.next_at,lease=NULL,lease_until=NULL,error=NULL WHERE job.status IN ('done','failed')`,
   randomUUID(), kind, target, JSON.stringify(payload), Date.now());
 }
-export function addVideo(d: Db, batch: Batch, input: { filename: string; mime: string; sample?: string; useAi?: boolean }) {
+type NewVideo = { filename: string; mime: string; sample?: string; useAi?: boolean };
+export function addVideos(d: Db, batch: Batch, inputs: NewVideo[]) {
   return d.tx(() => {
     assertDraft(ownedBatch(d, batch.owner, batch.id));
-    if ((d.one<{ n: number }>("SELECT count(*) n FROM video WHERE batch_id=?", batch.id)?.n ?? 0) >= 24) {
+    const existing=d.one<{ n: number }>("SELECT count(*) n FROM video WHERE batch_id=?", batch.id)?.n ?? 0;
+    if (existing + inputs.length > 24) {
       throw new InputError("Mỗi lô chứa tối đa 24 video.");
     }
-    const id = randomUUID();
-    d.run("INSERT INTO video(id,batch_id,filename,mime,status,created_at,sample,use_ai) VALUES (?,?,?,?,?,?,?,?)",
-      id, batch.id, input.filename, input.mime, input.sample ? "queued" : "uploading", now(), input.sample ?? null, Number(!!input.useAi));
-    if (input.sample) enqueue(d, "analyze", id);
-    return id;
+    return inputs.map(input => {
+      const id = randomUUID();
+      d.run("INSERT INTO video(id,batch_id,filename,mime,status,created_at,sample,use_ai) VALUES (?,?,?,?,?,?,?,?)",
+        id,batch.id,input.filename,input.mime,input.sample?"queued":"uploading",now(),input.sample??null,Number(!!input.useAi));
+      if (input.sample) enqueue(d,"analyze",id);
+      return id;
+    });
   });
 }
+export const addVideo = (d: Db, batch: Batch, input: NewVideo) => addVideos(d,batch,[input])[0];
 export function batchView(d: Db, owner: string, id: string) {
   const b = ownedBatch(d, owner, id);
   const { owner: _owner, ...batch } = b;
@@ -99,7 +104,8 @@ export function preview(d: Db, batch: Batch) {
   const plan: (FrozenAd & { name: string; group: string })[] = [];
   for (const v of d.all<Video>("SELECT * FROM video WHERE batch_id=? ORDER BY rowid", batch.id)) {
     const variants = d.all<Variant>("SELECT * FROM variant WHERE video_id=? ORDER BY rowid", v.id);
-    const destination = v.destination || parse<Context>(v.overrides).url || config.destination || parse<Context>(batch.context).url || "";
+    const destination = v.destination || parse<Context>(v.overrides).url || config.destination || parse<Context>(batch.context).url ||
+      (v.sample ? "https://example.com/hair-studio" : "");
     const tracking = v.tracking || config.tracking;
     const group = config.structure === "shared" ? "shared" : v.group_key;
     const reason = !v.included ? "Đã bỏ chọn" : v.status !== "ready" ? "Video chưa xử lý xong" :

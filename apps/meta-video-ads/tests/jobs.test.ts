@@ -7,7 +7,19 @@ import { Db } from "../lib/db.ts";
 import { tick,retryPublish } from "../lib/jobs.ts";
 import { defaultConfig,dayInZone } from "../lib/domain.ts";
 import { report,reportCsv } from "../lib/reporting.ts";
-import { addVideo,batchView,createBatch,ownedBatch,ownedVideo,preview,publish,newSession,session, type Ad } from "../lib/workspace.ts";
+import { addVideo,addVideos,batchView,createBatch,ownedBatch,ownedVideo,preview,publish,newSession,session, type Ad } from "../lib/workspace.ts";
+
+test("adding sample videos respects capacity atomically",()=>{
+  const root=mkdtempSync(join(tmpdir(),"meta-sample-capacity-")), db=new Db(root);
+  try {
+    const owner=session(db,newSession(db))!;
+    const batch=ownedBatch(db,owner,createBatch(db,owner,"Capacity"));
+    const input={filename:"ritual.mp4",mime:"video/mp4",sample:"ritual"};
+    assert.equal(addVideos(db,batch,Array.from({length:23},()=>input)).length,23);
+    assert.throws(()=>addVideos(db,batch,[input,input,input]),/tối đa 24/);
+    assert.equal(batchView(db,owner,batch.id).videos.length,23);
+  } finally {db.sql.close();rmSync(root,{force:true,recursive:true});}
+});
 
 test("independent analysis, preserved copy, confirmed mapping and part-way publish recovery",async()=>{
   const root=mkdtempSync(join(tmpdir(),"meta-video-test-"));

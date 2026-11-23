@@ -66,7 +66,8 @@ try {
   const real=await ok<{id:string}>(call(base+"/upload",cookie,{method:"POST",headers:{
     "content-type":"video/mp4","x-demo-request":"1","x-video-name":encodeURIComponent("Tải thử.mp4"),
   },body:new Uint8Array(data)}),201);
-  const samples=await ok<{ids:string[]}>(post(base+"/samples",cookie,{keys:["ritual","guide"],useDraftDefaults:true}),202);
+  await ok(post(base+"/context",cookie,{url:"https://example.org/original"}));
+  const samples=await ok<{ids:string[]}>(post(base+"/samples",cookie,{keys:["ritual","guide"]}),202);
   const processed=await waitFor(async()=>{
     const batch=await show();
     return batch.videos.filter(v=>v.status==="ready").length===3 && batch.videos.some(v=>v.id===bad.id&&v.status==="failed")?batch:undefined;
@@ -87,6 +88,7 @@ try {
   assert.equal(regenerated.variants.find(c=>c.id===variant.id)?.data.headline,"Bản đã chỉnh");
   const review=await ok<Preview>(call(base+"/preview",cookie));
   assert.equal(review.plan.length,3);
+  assert.equal(review.plan.find(ad=>ad.videoId===real.id)?.destination,"https://example.org/original");
   assert.equal(review.excluded[0].videoId,bad.id);
   assert.equal(review.budget,processed.config.budget);
   assert.equal((await post(base+"/publish",cookie,{confirm:false,reviewKey:review.reviewKey})).status,400);

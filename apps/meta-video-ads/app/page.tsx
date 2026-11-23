@@ -217,7 +217,7 @@ export default function Page() {
               {workspace.ai&&<label className="check"><input type="checkbox" checked={gemini} onChange={e=>setGemini(e.target.checked)}/>
                 Gửi video tải lên tới Gemini để phân tích thật (tối đa 12 MiB / 60 giây; có thể phát sinh phí provider).</label>}
               <div className="sample-row"><div><strong>Chưa có video?</strong><p>Thử 3 video minh hoạ về sản phẩm chăm sóc tóc.</p></div>
-                <button disabled={busy} onClick={()=>void save("samples",{keys:samples.map(s=>s.key),useDraftDefaults:true},"Đã thêm video mẫu và xếp hàng xử lý.")}>Thêm 3 video mẫu</button>
+                <button disabled={busy} onClick={()=>void save("samples",{keys:samples.map(s=>s.key)},"Đã thêm video mẫu và xếp hàng xử lý.")}>Thêm 3 video mẫu</button>
               </div>
             </section>
             <ContextForm key={batch.id} value={batch.context} save={v=>save("context",v,"Đã lưu bối cảnh chung.")} busy={busy} title="Bối cảnh chung của lô"/>
