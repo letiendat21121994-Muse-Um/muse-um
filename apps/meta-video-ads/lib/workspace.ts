@@ -4,7 +4,11 @@ import { now, parse } from "./db.ts";
 import { defaultConfig, trackingValid, validation, httpUrl, type Analysis, type Config, type Context, type Copy } from "./domain.ts";
 
 export class InputError extends Error {
-  constructor(message: string, public status = 400) { super(message); }
+  readonly status: number;
+  constructor(message: string, status = 400) {
+    super(message);
+    this.status = status;
+  }
 }
 export const absent = () => new InputError("Không tìm thấy mục này.", 404);
 const digest = (value: string) => createHash("sha256").update(value).digest("hex");

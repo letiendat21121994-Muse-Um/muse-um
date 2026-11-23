@@ -6,7 +6,11 @@ import { samples } from "./samples.ts";
 export const aiEnabled = () => Boolean(process.env.GEMINI_API_KEY);
 export const variantsSchema = z.array(copySchema).min(3).max(5);
 export class ProviderError extends Error {
-  constructor(message: string, public retryable = false) { super(message); }
+  readonly retryable: boolean;
+  constructor(message: string, retryable = false) {
+    super(message);
+    this.retryable = retryable;
+  }
 }
 async function gemini<T>(schema: z.ZodType<T>, instruction: string, input: object, media?: { path: string; mime: string; duration: number }) {
   const key = process.env.GEMINI_API_KEY;
