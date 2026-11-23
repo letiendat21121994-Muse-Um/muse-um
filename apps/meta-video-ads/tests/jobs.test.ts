@@ -25,6 +25,12 @@ test("WebM with no container duration is measured through the last frame",async(
     assert.ok(measured>1.3&&measured<1.4);
     process.env.MAX_VIDEO_SECONDS="1";
     await assert.rejects(inspect(movie,"video/webm",thumb),/dài hơn 1 giây/);
+
+    const opus=join(root,"with-opus.webm");
+    execFileSync("ffmpeg",["-loglevel","error","-f","lavfi","-i","color=c=blue:s=160x160:r=25:d=1",
+      "-f","lavfi","-i","sine=d=1","-c:v","libvpx-vp9","-c:a","libopus","-live","1",opus]);
+    const measuredOpus=await inspect(opus,"video/webm",thumb);
+    assert.ok(Math.abs(measuredOpus-1)<0.001);
   } finally {
     if (oldLimit===undefined) delete process.env.MAX_VIDEO_SECONDS;
     else process.env.MAX_VIDEO_SECONDS=oldLimit;
