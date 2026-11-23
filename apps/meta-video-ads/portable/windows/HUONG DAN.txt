@@ -1,0 +1,20 @@
+﻿META VIDEO ADS STUDIO (DEMO): BẢN PORTABLE CHO WINDOWS
+
+Cách dùng
+1. Giải nén file zip vào một thư mục bất kỳ (ví dụ D:\MetaVideoAds-Portable).
+   Không chạy trực tiếp trong cửa sổ xem file zip.
+2. Bấm đúp "Mo Meta Video Ads.bat". Trình duyệt sẽ tự mở http://127.0.0.1:3939
+   (nếu cổng 3939 đang bận, ứng dụng dùng cổng kế tiếp: xem địa chỉ trong cửa sổ đen).
+3. Muốn tắt ứng dụng: đóng cửa sổ đen (Command Prompt).
+
+Lưu ý
+- Đây là bản DEMO: không kết nối Meta, không đăng quảng cáo thật, không chi tiền.
+  Số liệu báo cáo là số liệu minh hoạ.
+- Không cần cài Node.js, ffmpeg hay tài khoản nào: tất cả đã nằm trong thư mục runtime.
+- Dữ liệu (lô nháp, video tải lên) lưu trong thư mục "data" cạnh file .bat.
+  Sao chép cả thư mục để chuyển sang máy khác; xoá "data" để bắt đầu lại từ đầu.
+- Nếu Windows SmartScreen cảnh báo, chọn "More info" > "Run anyway".
+- Ứng dụng chỉ mở trên máy này (127.0.0.1); máy khác trong mạng không truy cập được.
+
+Yêu cầu: Windows 10/11 64-bit.
+Thành phần kèm theo: Node.js (giấy phép MIT, runtime\LICENSE), FFmpeg bản LGPL (runtime\ffmpeg\LICENSE.txt).
