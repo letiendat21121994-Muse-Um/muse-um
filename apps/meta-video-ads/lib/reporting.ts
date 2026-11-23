@@ -28,18 +28,19 @@ export function syncDemo(d: Db, batchId: string) {
 export type ReportRow = {
   day: string; currency: string; metrics: Metrics; adId: string; adName: string; adRef: string;
   videoId: string; variantId: string; group: string; batchId: string; batchName: string; campaign: string;
-  groupName: string; campaignName: string; status: "simulated"; snapshot: FrozenAd;
+  adSetId: string; groupName: string; campaignName: string; status: "simulated"; snapshot: FrozenAd;
 };
-export function report(d: Db, owner: string, filters: { from: string; to: string; batch: string; group: string; status: string }) {
-  type Raw = { day: string; values_json: string; batch_name: string; campaign_ref: string; config: string } & Ad;
-  const rows: ReportRow[] = d.all<Raw>(`SELECT s.day,s.values_json,a.*,b.name batch_name,b.campaign_ref,b.config
+export function report(d: Db, owner: string, filters: { from: string; to: string; batch: string; adSet: string; status: string }) {
+  type Raw = { day: string; values_json: string; batch_name: string; campaign_ref: string; config: string; ad_set_id: string } & Ad;
+  const rows: ReportRow[] = d.all<Raw>(`SELECT s.day,s.values_json,a.*,b.name batch_name,b.campaign_ref,b.config,g.id ad_set_id
     FROM snapshot s JOIN ad a ON a.id=s.ad_id JOIN batch b ON b.id=a.batch_id
-    WHERE b.owner=? AND s.day BETWEEN ? AND ? AND (?='' OR b.id=?) AND (?='' OR a.group_key=?)
+    JOIN ad_set g ON g.batch_id=b.id AND g.group_key=a.group_key
+    WHERE b.owner=? AND s.day BETWEEN ? AND ? AND (?='' OR b.id=?) AND (?='' OR g.id=?)
       AND (?='' OR a.state=?) ORDER BY s.day,a.id`,
-    owner,filters.from,filters.to,filters.batch,filters.batch,filters.group,filters.group,filters.status,filters.status)
+    owner,filters.from,filters.to,filters.batch,filters.batch,filters.adSet,filters.adSet,filters.status,filters.status)
     .map(r => ({ day: r.day, currency: CURRENCY, metrics: parse<Metrics>(r.values_json), adId: r.id, adName: r.name, adRef: r.ad_ref!,
       videoId: r.video_id, variantId: r.variant_id, group: r.group_key, batchId: r.batch_id, batchName: r.batch_name,
-      campaign: r.campaign_ref, campaignName: parse<{name: string}>(r.config).name,
+      campaign: r.campaign_ref, campaignName: parse<{name: string}>(r.config).name, adSetId:r.ad_set_id,
       groupName: parse<{groups: {key: string; name: string}[]}>(r.config).groups.find(g => g.key === r.group_key)?.name ?? r.group_key,
       status: "simulated", snapshot: parse<FrozenAd>(r.snapshot) }));
   const aggregate = (list: ReportRow[]) => totals(list.map(r => ({ ...r.metrics, currency: r.currency })));

@@ -117,7 +117,7 @@ async function read(request: NextRequest, path: string[]) {
     const filters = {
       from: date.parse(p.get("from") ?? dayInZone(new Date(Date.now()-6*86400_000))),
       to: date.parse(p.get("to") ?? dayInZone()), batch: p.get("batch") ?? "",
-      group: p.get("group") ?? "", status: p.get("status") ?? "",
+      adSet: id.or(z.literal("")).parse(p.get("adSet") ?? ""), status: p.get("status") ?? "",
     };
     if (filters.from > filters.to) throw new InputError("Khoảng ngày không hợp lệ.");
     if (filters.batch) ownedBatch(d,user,filters.batch);

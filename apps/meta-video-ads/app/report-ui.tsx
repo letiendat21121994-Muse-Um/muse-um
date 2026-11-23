@@ -13,7 +13,7 @@ const sum=(rows:ReportRow[])=>totals(rows.map(r=>({...r.metrics,currency:r.curre
 function groupRows(rows:ReportRow[], by:GroupBy) {
   const grouped=new Map<string,ReportRow[]>();
   for(const r of rows) {
-    const key=by==="campaign"?r.campaign:by==="adset"?r.batchId+":"+r.group:by==="ad"?r.adId:by==="video"?r.videoId:r.variantId;
+    const key=by==="campaign"?r.campaign:by==="adset"?r.adSetId:by==="ad"?r.adId:by==="video"?r.videoId:r.variantId;
     if(!grouped.has(key))grouped.set(key,[]);
     grouped.get(key)!.push(r);
   }
@@ -42,7 +42,7 @@ export function Dashboard({batches,initialBatch,openSource,load,goStart,today}: 
   const [groupDrill,setGroupDrill]=useState("");
   const [page,setPage]=useState(0);
   const [chart,setChart]=useState<"spend"|"impressions"|"linkClicks">("spend");
-  const qs=new URLSearchParams({from,to,batch,group:groupDrill,status}).toString();
+  const qs=new URLSearchParams({from,to,batch,adSet:groupDrill,status}).toString();
   useEffect(()=>{
     let active=true;
     const reload=()=>load<Report>("report?"+qs).then(r=>{
@@ -53,12 +53,12 @@ export function Dashboard({batches,initialBatch,openSource,load,goStart,today}: 
     const timer=setInterval(reload,3600);
     return ()=>{active=false;clearInterval(timer);};
   },[load,qs]);
-  const groups=useMemo(()=>new Map(data?.rows.map(r=>[r.group,r.groupName])),[data]);
-  const rows=useMemo(()=>data?.rows.filter(r=>!group||r.group===group)??[],[data,group]);
+  const groups=useMemo(()=>new Map(data?.rows.map(r=>[r.adSetId,r.groupName+" · "+r.batchName])),[data]);
+  const rows=useMemo(()=>data?.rows.filter(r=>!group||r.adSetId===group)??[],[data,group]);
   const shown=useMemo(()=>groupRows(rows,by),[rows,by]);
   const metrics=group?sum(rows):data?.totals;
   const csvQuery=new URLSearchParams(qs);
-  if(group)csvQuery.set("group",group);
+  if(group)csvQuery.set("adSet",group);
   const trend=group?[...new Set(rows.map(r=>r.day))].map(day=>({day,...sum(rows.filter(r=>r.day===day))})):data?.trend??[];
   const max=Math.max(1,...trend.map(a=>a[chart]??0));
   const chartLabel={spend:"Chi tiêu",impressions:"Lượt hiển thị",linkClicks:"Link clicks"}[chart];
@@ -92,7 +92,7 @@ export function Dashboard({batches,initialBatch,openSource,load,goStart,today}: 
         <label>Lô / chiến dịch <select value={batch} onChange={e=>{setBatch(e.target.value);setGroup("");setCampaignDrill("");setGroupDrill("");}}>
           <option value="">Tất cả lô đã xuất bản</option>{batches.filter(b=>b.published_at).map(b=><option key={b.id} value={b.id}>{b.name}</option>)}</select></label>
         <label>Nhóm quảng cáo <select value={group} onChange={e=>{setGroup(e.target.value);setPage(0);}}>
-          <option value="">Tất cả nhóm</option>{[...groups].map(([g,label])=><option key={g} value={g}>{label} ({g})</option>)}</select></label>
+          <option value="">Tất cả nhóm</option>{[...groups].map(([g,label])=><option key={g} value={g}>{label}</option>)}</select></label>
         <label>Trạng thái <select value={status} onChange={e=>setStatus(e.target.value)}>
           <option value="">Tất cả trạng thái</option><option value="simulated">Mô phỏng thành công</option><option value="failed">Lỗi (không có số liệu)</option></select></label>
       </div>
@@ -134,7 +134,7 @@ export function Dashboard({batches,initialBatch,openSource,load,goStart,today}: 
           <tbody>{shown.slice(page*12,page*12+12).map(({id,items,r,total:t,name})=><ReportLine key={id} {...{r,t,name,items,id,by}}
             detail={detail===id} open={()=>setDetail(detail===id?"":id)} source={openSource}
             drill={()=>{if(by==="campaign"){setBatch(r.batchId);setCampaignDrill(r.batchId);setGroupDrill("");setGroup("");go("adset");}
-              else if(by==="adset"){setBatch(r.batchId);setGroupDrill(r.group);setGroup("");go("ad");}
+              else if(by==="adset"){setBatch(r.batchId);setGroupDrill(r.adSetId);setGroup("");go("ad");}
               else setDetail(detail===id?"":id);}}/>)}
           {metrics&&<tr className="total-row"><th scope="row">Tổng / tính lại</th><Cells t={metrics}/></tr>}</tbody></table></div>
         {shown.length>12&&<div className="footer-actions"><button disabled={!page} onClick={()=>setPage(page-1)}>Trước</button>

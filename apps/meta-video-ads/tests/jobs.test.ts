@@ -70,12 +70,23 @@ test("independent analysis, preserved copy, confirmed mapping and part-way publi
     assert.equal(db.all("SELECT * FROM media_mapping").length,2);
     assert.equal(db.all("SELECT * FROM ad_set").length,1);
     assert.equal(db.all("SELECT * FROM batch WHERE campaign_ref IS NOT NULL").length,1);
-    const filters={from:"2020-01-01",to:dayInZone(),batch:id,status:"",group:""};
+    const filters={from:"2020-01-01",to:dayInZone(),batch:id,status:"",adSet:""};
     const result=report(db,owner,filters);
     assert.equal(result.rows.length,21);
     assert.equal(result.totals.reach,null);
     assert.equal(report(db,other,filters).rows.length,0);
     assert.equal(report(db,owner,{...filters,from:dayInZone()}).rows.length,3);
+    const secondBatch=createBatch(db,owner,"Nhóm cùng mã ở lô khác");
+    db.run("UPDATE batch SET config=? WHERE id=?",JSON.stringify(cfg),secondBatch);
+    addVideo(db,ownedBatch(db,owner,secondBatch),{filename:"texture.mp4",mime:"video/mp4",sample:"texture"});
+    while(await tick(db,0)) {}
+    const secondPlan=preview(db,ownedBatch(db,owner,secondBatch));
+    publish(db,owner,secondBatch,false,secondPlan.reviewKey);
+    while(await tick(db,0)) {}
+    const acrossBatches=report(db,owner,{...filters,batch:""});
+    assert.equal(acrossBatches.rows.length,28);
+    const originalAdSet=result.rows[0].adSetId;
+    assert.equal(report(db,owner,{...filters,batch:"",adSet:originalAdSet}).rows.length,21);
     assert.ok(reportCsv(result.rows).includes('"DEMO"'));
   } finally {db.sql.close();rmSync(root,{force:true,recursive:true});}
 });
