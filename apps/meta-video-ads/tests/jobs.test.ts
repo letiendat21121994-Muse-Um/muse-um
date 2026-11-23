@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { mkdtempSync,rmSync } from "node:fs";
+import { execFileSync } from "node:child_process";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { test } from "node:test";
@@ -7,7 +8,20 @@ import { Db } from "../lib/db.ts";
 import { tick,retryPublish } from "../lib/jobs.ts";
 import { defaultConfig,dayInZone } from "../lib/domain.ts";
 import { report,reportCsv } from "../lib/reporting.ts";
+import { inspect } from "../lib/media.ts";
 import { addVideo,addVideos,batchView,createBatch,ownedBatch,ownedVideo,preview,publish,newSession,session, type Ad } from "../lib/workspace.ts";
+
+test("a decodable WebM with no container duration can be analyzed",async()=>{
+  const root=mkdtempSync(join(tmpdir(),"meta-webm-test-"));
+  try {
+    const movie=join(root,"live.webm"), thumb=join(root,"thumb.jpg");
+    execFileSync("ffmpeg",["-loglevel","error","-i","public/samples/ritual.mp4","-t","1","-c:v","libvpx-vp9","-live","1",movie]);
+    const duration=execFileSync("ffprobe",["-v","error","-show_entries","format=duration","-of","csv=p=0",movie],{encoding:"utf8"});
+    assert.equal(duration.trim(),"N/A");
+    const measured=await inspect(movie,"video/webm",thumb);
+    assert.ok(measured>0.8&&measured<=1.1);
+  } finally {rmSync(root,{force:true,recursive:true});}
+});
 
 test("adding sample videos respects capacity atomically",()=>{
   const root=mkdtempSync(join(tmpdir(),"meta-sample-capacity-")), db=new Db(root);

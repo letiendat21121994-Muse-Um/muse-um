@@ -39,10 +39,17 @@ export async function inspect(path: string, mime: string, thumbnail: string) {
     const {stdout} = await run("ffprobe", ["-v","error","-protocol_whitelist","file","-f",mime === "video/webm" ? "matroska" : "mov",
       "-show_entries","stream=codec_type:format=duration","-of","json",path], { timeout:15_000,maxBuffer:128_000 });
     const info = JSON.parse(stdout);
-    const duration = Number(info.format.duration);
-    if (!info.streams?.some((s: {codec_type: string}) => s.codec_type === "video") || !Number.isFinite(duration) || duration <= 0) {
+    if (!info.streams?.some((s: {codec_type: string}) => s.codec_type === "video")) {
       throw new InputError("Tệp không có video hợp lệ.");
     }
+    let duration=Number(info.format?.duration);
+    if (mime==="video/webm" && (!Number.isFinite(duration) || duration<=0)) {
+      const {stdout:progress}=await run("ffmpeg",["-v","error","-nostdin","-nostats","-progress","pipe:1",
+        "-protocol_whitelist","file","-f","matroska","-i",path,"-map","0:v:0","-map","0:a:0?","-c","copy",
+        "-t",String(durationLimit()+1),"-f","null","-"],{timeout:15_000,maxBuffer:128_000});
+      duration=Math.max(0,...[...progress.matchAll(/^out_time_us=(\d+)$/gm)].map(line=>Number(line[1])/1_000_000));
+    }
+    if (!Number.isFinite(duration) || duration<=0) throw new InputError("Tệp không có thời lượng hợp lệ.");
     if (duration > durationLimit()) throw new InputError(`Video dài hơn ${durationLimit()} giây.`);
     await run("ffmpeg", ["-v","error","-nostdin","-protocol_whitelist","file","-threads","1","-f",
       mime === "video/webm" ? "matroska" : "mov","-i",path,"-frames:v","1","-vf","scale=360:-2","-threads","1","-y",thumbnail],
