@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { createHash } from "node:crypto";
 import { createServer } from "node:net";
 import { delimiter, dirname, resolve } from "node:path";
 import { setTimeout } from "node:timers/promises";
@@ -10,11 +11,13 @@ const free = (port) => new Promise((ok) => {
 let port = Number(process.env.PORT) || 3939;
 while (!(await free(port))) port++;
 const url = `http://127.0.0.1:${port}`;
+const dataDir = process.env.DATA_DIR || resolve(root, "data");
 const env = {
   ...process.env,
   HOST: "127.0.0.1",
   PORT: String(port),
-  DATA_DIR: process.env.DATA_DIR || resolve(root, "data"),
+  DATA_DIR: dataDir,
+  COOKIE_NAME: `mva_demo_${createHash("sha256").update(dataDir.toLowerCase()).digest("hex").slice(0, 12)}`,
   SECURE_COOKIE: "false",
   PATH: [resolve(root, "runtime", "ffmpeg"), dirname(process.execPath), process.env.PATH].join(delimiter),
 };

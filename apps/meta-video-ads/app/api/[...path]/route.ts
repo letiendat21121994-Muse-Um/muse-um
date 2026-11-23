@@ -17,7 +17,7 @@ import { samples } from "../../../lib/samples";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 type Route = { params: Promise<{path: string[]}> };
-const cookie = "mva_demo";
+const cookie = process.env.COOKIE_NAME || "mva_demo";
 const json = (data: unknown, status=200) => NextResponse.json(data,{ status, headers: { "Cache-Control": "no-store" } });
 const noStore = { "Cache-Control":"private, no-store","X-Content-Type-Options":"nosniff" };
 const id = z.uuid();
