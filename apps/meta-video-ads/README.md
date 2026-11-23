@@ -44,6 +44,10 @@ Tài liệu: [Gemini video](https://ai.google.dev/gemini-api/docs/video-understa
 - Nếu triển khai live: dùng OAuth server-side có state và token vault, xác nhận [quyền và cấp truy cập](https://developers.facebook.com/docs/marketing-api/get-started/authorization/) và [App Review](https://developers.facebook.com/docs/app-review/). `ads_management` cần cho viết, `ads_read` cho báo cáo/import. Advanced Access, App Review và Business Verification có thể cần với tài khoản người khác. Xác minh quyền ad account/Page/Instagram, Purchase dataset và tín hiệu Pixel/CAPI, special ad categories và tổ hợp mục tiêu/tối ưu/vị trí theo account.
 - Xem [Campaign](https://developers.facebook.com/docs/marketing-api/reference/ad-campaign-group/), [Ad Set](https://developers.facebook.com/docs/marketing-api/reference/ad-campaign/), [đơn vị currency](https://developers.facebook.com/docs/marketing-api/currencies/) và [Insights](https://developers.facebook.com/docs/marketing-api/insights/). Với live, đọc timezone/currency thực, kiểm tra mức tối thiểu và đơn vị ngân sách; tách API submission khỏi review/delivery; dùng reach từ API cho đúng reporting scope; đối chiếu attribution và reconciliation khi kết quả ghi chưa rõ. Không tự thay budget hoặc campaign. Không có giao dịch live hay yêu cầu App Review nào trong PR này.
 
+## Bản portable cho Windows
+
+`./scripts/package-windows.sh` (chạy trên Linux/macOS có Node 24, `curl`, `unzip`, `zip`) tạo `dist/MetaVideoAds-Portable-win-x64.zip`. Script build app trong thư mục tạm, cài dependency production cho `win32-x64`, rồi đóng gói thêm `node.exe` (Node.js, kiểm SHA-256 từ nodejs.org) và FFmpeg bản LGPL shared ([BtbN](https://github.com/BtbN/FFmpeg-Builds), kiểm theo `checksums.sha256`). Người dùng giải nén rồi bấm đúp `Mo Meta Video Ads.bat`: app chạy ở `http://127.0.0.1:3939` (cổng tiếp theo nếu bận), tự mở trình duyệt và lưu dữ liệu trong `data/` cạnh file .bat. Bản portable vẫn chỉ là demo, không kết nối Meta. Hướng dẫn cho người dùng nằm trong `portable/windows/HUONG DAN.txt`.
+
 ## Kiểm thử
 
 ```sh
