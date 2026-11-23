@@ -2,7 +2,7 @@
 
 Cách dùng
 1. Giải nén file zip vào một thư mục bất kỳ (ví dụ D:\MetaVideoAds-Portable).
-   Không chạy trực tiếp trong cửa sổ xem file zip.
+   Không chạy trực tiếp trong cửa sổ xem file zip, và không chạy từ ổ mạng (\\server\...).
 2. Bấm đúp "Mo Meta Video Ads.bat". Trình duyệt sẽ tự mở http://127.0.0.1:3939
    (nếu cổng 3939 đang bận, ứng dụng dùng cổng kế tiếp: xem địa chỉ trong cửa sổ đen).
 3. Muốn tắt ứng dụng: đóng cửa sổ đen (Command Prompt).
