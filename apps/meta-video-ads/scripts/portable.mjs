@@ -1,5 +1,6 @@
 import { spawn } from "node:child_process";
-import { createHash } from "node:crypto";
+import { randomBytes } from "node:crypto";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { createServer } from "node:net";
 import { delimiter, dirname, resolve } from "node:path";
 import { setTimeout } from "node:timers/promises";
@@ -12,12 +13,19 @@ let port = Number(process.env.PORT) || 3939;
 while (!(await free(port))) port++;
 const url = `http://127.0.0.1:${port}`;
 const dataDir = process.env.DATA_DIR || resolve(root, "data");
+const idFile = resolve(dataDir, "instance-id");
+let instance;
+try { instance = readFileSync(idFile, "utf8").trim(); } catch {
+  instance = randomBytes(6).toString("hex");
+  mkdirSync(dataDir, { recursive: true });
+  writeFileSync(idFile, instance);
+}
 const env = {
   ...process.env,
   HOST: "127.0.0.1",
   PORT: String(port),
   DATA_DIR: dataDir,
-  COOKIE_NAME: `mva_demo_${createHash("sha256").update(dataDir.toLowerCase()).digest("hex").slice(0, 12)}`,
+  COOKIE_NAME: `mva_demo_${instance}`,
   SECURE_COOKIE: "false",
   PATH: [resolve(root, "runtime", "ffmpeg"), dirname(process.execPath), process.env.PATH].join(delimiter),
 };
